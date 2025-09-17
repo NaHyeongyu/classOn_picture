@@ -21,6 +21,7 @@
 - [x] 6-topn-report: Top‑N 추천 & HTML 리포트
 - [ ] 7-demo: 테스트 데이터 & 데모(샘플 이미지 준비 및 e2e 검증)
  - [x] 8-venv-run: 가상환경 설치 스크립트 및 Makefile 실행 타겟 추가
+ - [x] 9-web-ui: 업로드/실행/결과 확인용 간단 HTML UI (Flask)
 
 ## 변경 로그(Summary)
 
@@ -29,3 +30,4 @@
   - preview: `python scripts/preview_clusters.py --out data/output`
 - PENDING: 샘플 데이터 10~30장 추가 및 경계 사례 로그 수집(7-demo)
  - DONE: venv/실행 자동화 (`scripts/setup_venv.sh`, `Makefile`의 `setup/run/preview`)
+ - DONE: 웹 UI (`scripts/web_ui.py`, 업로드→파이프라인 실행→리포트 뷰)

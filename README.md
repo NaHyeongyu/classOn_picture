@@ -74,12 +74,21 @@ python scripts/preview_clusters.py --out data/output
   status.json          # 머신/CI용 상태값 (동일 작업 id/name/status)
  ```
 
- ## 실행 예시
+## 실행 예시
 
  ```bash
  python scripts/run_pipeline.py --input data/input --out data/output --topk 3 --min-cluster-size 5
- python scripts/preview_clusters.py --out data/output
- ```
+python scripts/preview_clusters.py --out data/output
+```
+
+### 웹 UI로 실행 (HTML 업로드/출력)
+```bash
+make web  # http://127.0.0.1:8000 접속 → 이미지 업로드 → 실행
+```
+웹 UI 기능:
+- 이미지 업로드(여러 장), 파라미터 입력(Top-K, min_cluster_size)
+- 파이프라인 실행 후 결과 리포트 바로 보기
+- 이전 세션 목록/JSON/썸네일 접근
 
 ## 참고/주석
  - InsightFace/ArcFace 임베딩(512D) 기반 얼굴 표현.

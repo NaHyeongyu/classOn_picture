@@ -6,7 +6,7 @@ TOPK ?= 3
 MCS ?= 5
 PY ?= python
 
-.PHONY: setup run preview clean
+.PHONY: setup run preview clean web
 
 setup:
 	bash scripts/setup_venv.sh
@@ -20,3 +20,5 @@ preview:
 clean:
 	rm -rf $(OUT)/faces $(OUT)/cache $(OUT)/clusters.json $(OUT)/report.html
 
+web:
+	. .venv/bin/activate && $(PY) scripts/web_ui.py

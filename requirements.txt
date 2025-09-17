@@ -11,3 +11,4 @@ tqdm>=4.66.1
 Pillow>=9.5.0
 # Optional: BRISQUE (will be used if available)
 pybrisque>=1.0
+Flask>=3.0.0
