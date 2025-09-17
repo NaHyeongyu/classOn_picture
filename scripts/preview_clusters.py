@@ -2,11 +2,16 @@
 from __future__ import annotations
 
 import argparse
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
-from src.utils.fs import read_json
-from src.viz.report import render_report
+# Add project root to sys.path for "src" package
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from src.utils.fs import read_json  # noqa: E402
+from src.viz.report import render_report  # noqa: E402
 
 
 def main() -> None:
@@ -24,4 +29,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -2,10 +2,15 @@
 from __future__ import annotations
 
 import argparse
+import os
+import sys
 from pathlib import Path
 
-from src.pipeline import run_pipeline
-from src.utils.fs import ensure_dir
+# Add project root to sys.path for "src" package
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+from src.pipeline import run_pipeline  # noqa: E402
+from src.utils.fs import ensure_dir  # noqa: E402
 
 
 def main() -> None:
@@ -22,4 +27,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
