@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "project": "face-mvp",
-  "updated_at": null,
+  "updated_at": "2025-09-17T00:00:00Z",
   "statuses_allowed": ["todo", "in_progress", "done", "blocked"],
   "params": {
     "default_topk": 3,
@@ -14,13 +14,13 @@
     {"id": "4-quality", "name": "품질 지표", "status": "done"},
     {"id": "5-smile", "name": "웃음/표정", "status": "done"},
     {"id": "6-topn-report", "name": "Top-N 추천 & 리포트", "status": "done"},
-    {"id": "7-demo", "name": "테스트 데이터 & 데모", "status": "pending"}
+    {"id": "7-demo", "name": "테스트 데이터 & 데모", "status": "pending"},
+    {"id": "8-venv-run", "name": "가상환경 설치/실행 자동화", "status": "done"}
   ],
   "summary": {
-    "done": 6,
+    "done": 7,
     "pending": 1,
     "blocked": 0,
-    "total": 7
+    "total": 8
   }
 }
-

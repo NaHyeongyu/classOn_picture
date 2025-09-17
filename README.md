@@ -2,25 +2,38 @@
 
  간단히: 폴더에 사진을 넣고 파이프라인을 실행하면, 얼굴을 검출하고 임베딩(ArcFace/InsightFace) → HDBSCAN으로 동일 인물 클러스터링 → 웃음/선명도 점수로 각 인물의 Top-N을 추천하여 JSON과 HTML 리포트를 생성합니다.
 
- ## 빠른 시작
+## 빠른 시작
 
- - 요구사항: Python 3.10+
- - 권장: macOS/Windows/Linux (CPU 실행)
+- 요구사항: Python 3.10+
+- 권장: macOS/Windows/Linux (CPU 실행)
 
- ```bash
- python -m venv .venv
- source .venv/bin/activate  # Windows: .venv\Scripts\activate
- pip install -r requirements.txt
+옵션 A) 자동 스크립트/Makefile 사용
+```bash
+make setup                 # .venv 생성 및 의존성 설치
+make run                   # INPUT/OUT 기본값으로 파이프라인 실행
+# 커스텀 실행
+make run INPUT=data/input OUT=data/output TOPK=3 MCS=5
+make preview OUT=data/output
+```
+
+옵션 B) 수동 설치/실행
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
 
  # 기본 실행 (예시)
  python scripts/run_pipeline.py --input data/input --out data/output --topk 3 --min-cluster-size 5
- python scripts/preview_clusters.py --out data/output
- ```
+python scripts/preview_clusters.py --out data/output
+```
 
- ### 모델 다운로드
+### 모델 다운로드
  - InsightFace는 최초 실행 시 자동으로 ONNX 모델을 다운로드합니다(~ 수백 MB). 네트워크가 제한된 환경이라면, 다음을 고려하세요.
    - 인터넷이 가능한 환경에서 한 번 실행하여 `~/.insightface`에 모델 캐시를 받은 뒤, 동일 경로를 복사하여 사용
-   - 또는 사내 미러/프록시 사용
+  - 또는 사내 미러/프록시 사용
+
+### Apple Silicon 참고
+- `scripts/setup_venv.sh`는 macOS arm64에서 `onnxruntime` 설치 실패 시 자동으로 `onnxruntime-silicon`을 설치하고 나머지 패키지를 재설치합니다.
 
  ## 기능 개요
 

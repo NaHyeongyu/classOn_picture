@@ -20,6 +20,7 @@
 - [x] 5-smile: 웃음/표정(OpenCV Smile Cascade)
 - [x] 6-topn-report: Top‑N 추천 & HTML 리포트
 - [ ] 7-demo: 테스트 데이터 & 데모(샘플 이미지 준비 및 e2e 검증)
+ - [x] 8-venv-run: 가상환경 설치 스크립트 및 Makefile 실행 타겟 추가
 
 ## 변경 로그(Summary)
 
@@ -27,4 +28,4 @@
   - run: `python scripts/run_pipeline.py --input data/input --out data/output`
   - preview: `python scripts/preview_clusters.py --out data/output`
 - PENDING: 샘플 데이터 10~30장 추가 및 경계 사례 로그 수집(7-demo)
-
+ - DONE: venv/실행 자동화 (`scripts/setup_venv.sh`, `Makefile`의 `setup/run/preview`)
