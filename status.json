@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "project": "face-mvp",
+  "updated_at": null,
+  "statuses_allowed": ["todo", "in_progress", "done", "blocked"],
+  "params": {
+    "default_topk": 3,
+    "default_min_cluster_size": 5
+  },
+  "tasks": [
+    {"id": "1-setup", "name": "기본 세팅", "status": "done"},
+    {"id": "2-detect-embed", "name": "얼굴 검출·임베딩", "status": "done"},
+    {"id": "3-hdbscan", "name": "클러스터링(HDBSCAN)", "status": "done"},
+    {"id": "4-quality", "name": "품질 지표", "status": "done"},
+    {"id": "5-smile", "name": "웃음/표정", "status": "done"},
+    {"id": "6-topn-report", "name": "Top-N 추천 & 리포트", "status": "done"},
+    {"id": "7-demo", "name": "테스트 데이터 & 데모", "status": "pending"}
+  ],
+  "summary": {
+    "done": 6,
+    "pending": 1,
+    "blocked": 0,
+    "total": 7
+  }
+}
+
