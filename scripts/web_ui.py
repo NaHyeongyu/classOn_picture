@@ -179,9 +179,9 @@ def sessions():
 
 def main() -> None:
     port = int(os.environ.get("PORT", 8000))
-    APP.run(host="127.0.0.1", port=port, debug=True, threaded=True)
+    # Run without reloader in background usage
+    APP.run(host="127.0.0.1", port=port, debug=False, threaded=True, use_reloader=False)
 
 
 if __name__ == "__main__":
     main()
-
