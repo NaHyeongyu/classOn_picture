@@ -6,7 +6,8 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Any
+from threading import Thread
 
 from flask import Flask, Response, flash, redirect, render_template_string, request, send_from_directory, url_for
 
@@ -26,6 +27,9 @@ APP.secret_key = os.environ.get("FACE_MVP_SECRET", "dev-secret")
 BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_IN = BASE_DIR / "data" / "input"
 DATA_OUT = BASE_DIR / "data" / "output"
+
+# In-memory job states (simple MVP)
+JOBS: Dict[str, Dict[str, Any]] = {}
 
 
 INDEX_HTML = """
@@ -76,7 +80,7 @@ INDEX_HTML = """
         <ul class="mt-3">
           {% for sid in recent %}
             <li>
-              <a href="{{ url_for('view', sid=sid) }}">{{ sid }}</a>
+              <a href="{{ url_for('ui', sid=sid) }}">{{ sid }}</a>
               <small class="ms-2"><a href="{{ url_for('groups', sid=sid) }}">원본 그룹</a></small>
             </li>
           {% else %}
@@ -90,10 +94,159 @@ INDEX_HTML = """
 """
 
 
+# Interactive UI (progress + grouped originals)
+UI_HTML = """
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet"/>
+    <title>진행 현황</title>
+    <style>
+      .thumb { object-fit: cover; width: 100%; height: 120px; }
+    </style>
+  </head>
+  <body>
+    <div class="container my-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h3 class="m-0">처리 진행</h3>
+        <div class="btn-group">
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('index') }}">업로드</a>
+          <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('sessions') }}">세션 목록</a>
+        </div>
+      </div>
+      <div id="progressArea" class="card p-3 mb-3">
+        <div class="d-flex justify-content-between"><div>단계: <span id="stage">대기</span></div><div><span id="pct">0</span>%</div></div>
+        <div class="progress mt-2" role="progressbar" aria-label="progress">
+          <div id="bar" class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <div id="resultArea" style="display:none">
+        <h4 class="mb-3">원본 사진 — 인물별</h4>
+        <div id="persons" class="row row-cols-1 row-cols-md-2 row-cols-lg-3 g-3"></div>
+
+        <div class="my-4">
+          <h5 class="mb-2">분리되지 않은 사진</h5>
+          <div class="mb-1"><span class="badge bg-secondary">Noise (얼굴은 있으나 미분류)</span></div>
+          <div id="noise" class="row row-cols-4 g-2"></div>
+          <div class="mt-3 mb-1"><span class="badge bg-secondary">No Face (얼굴 없음)</span></div>
+          <div id="noface" class="row row-cols-4 g-2"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const sid = "{{ sid }}";
+      const statusUrl = "/status/" + sid;
+      const groupUrl = "/group-data/" + sid;
+
+      async function poll() {
+        try {
+          const r = await fetch(statusUrl, {cache: 'no-store'});
+          const s = await r.json();
+          const pct = Math.max(0, Math.min(100, Math.round(s.percent || 0)));
+          document.getElementById('pct').textContent = pct;
+          document.getElementById('bar').style.width = pct + '%';
+          document.getElementById('stage').textContent = s.stage || '진행중';
+          if (s.done || s.stage === 'done') {
+            await showResults();
+            return;
+          }
+        } catch (e) {
+          console.log('status error', e);
+        }
+        setTimeout(poll, 800);
+      }
+
+      function makeThumb(src) {
+        return `<div class='col'><a href='${src}' target='_blank'><img class='img-fluid rounded thumb' src='${src}'/></a></div>`;
+      }
+
+      async function showResults() {
+        try {
+          const r = await fetch(groupUrl, {cache: 'no-store'});
+          const g = await r.json();
+          const base = '/out/' + sid + '/';
+          // Persons
+          const personsDiv = document.getElementById('persons');
+          personsDiv.innerHTML = '';
+          const keys = Object.keys(g.clusters_to_photos || {}).filter(k => /^\d+$/.test(k)).map(k => parseInt(k)).sort((a,b)=>a-b);
+          for (const k of keys) {
+            const rels = g.clusters_to_photos[String(k)] || [];
+            const thumbs = rels.slice(0, 12).map(p => makeThumb(base + p)).join('');
+            const fallback = "<div class='text-muted'>이미지 없음</div>";
+            const body = thumbs || fallback;
+            const card = `
+              <div class='col'>
+                <div class='card h-100'>
+                  <div class='card-header'><strong>인물 ${k}</strong> <span class='badge bg-light text-dark'>${rels.length}</span></div>
+                  <div class='card-body'><div class='row row-cols-4 g-2'>${body}</div></div>
+                </div>
+              </div>`;
+            personsDiv.insertAdjacentHTML('beforeend', card);
+          }
+          if (keys.length === 0) {
+            personsDiv.innerHTML = "<div class='text-muted'>클러스터가 없습니다.</div>";
+          }
+
+          // Noise and No Face
+          const noiseDiv = document.getElementById('noise');
+          const nfDiv = document.getElementById('noface');
+          const noise = (g.clusters_to_photos && g.clusters_to_photos['noise']) || [];
+          const noface = g.no_face || [];
+          noiseDiv.innerHTML = noise.slice(0, 24).map(p => makeThumb(base + p)).join('') || "<div class='text-muted'>없음</div>";
+          nfDiv.innerHTML = noface.slice(0, 24).map(p => makeThumb(base + p)).join('') || "<div class='text-muted'>없음</div>";
+
+          // Toggle areas
+          document.getElementById('progressArea').style.display = 'none';
+          document.getElementById('resultArea').style.display = '';
+        } catch (e) {
+          console.log('group error', e);
+          setTimeout(showResults, 1000);
+        }
+      }
+
+      poll();
+    </script>
+  </body>
+  </html>
+"""
+
+
 @APP.route("/")
 def index() -> str:
     recent = sorted([p.name for p in (DATA_OUT).glob("*") if p.is_dir()])[-5:][::-1]
     return render_template_string(INDEX_HTML, recent=recent)
+
+
+def _save_status(sid: str, out_dir: Path, stage: str, percent: float, extra: Dict[str, Any] | None = None) -> None:
+    import json
+    st = {
+        "sid": sid,
+        "stage": stage,
+        "percent": float(percent),
+        "extra": extra or {},
+        "done": stage == "done",
+    }
+    JOBS[sid] = st
+    try:
+        (out_dir / "status.json").write_text(json.dumps(st), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _run_job(sid: str, in_dir: Path, out_dir: Path, topk: int, mcs: int) -> None:
+    def cb(stage: str, pct: float, extra: Dict):
+        _save_status(sid, out_dir, stage, pct, extra)
+
+    try:
+        _save_status(sid, out_dir, "start", 0.0, {})
+        run_pipeline(str(in_dir), str(out_dir), topk=topk, min_cluster_size=mcs, progress_cb=cb)
+        _save_status(sid, out_dir, "done", 100.0, {})
+    except Exception as e:
+        _save_status(sid, out_dir, "error", 100.0, {"message": str(e)})
 
 
 @APP.route("/run", methods=["POST"])
@@ -125,10 +278,39 @@ def run() -> Response:
         flash("지원되는 이미지가 없습니다. (jpg/jpeg/png)")
         return redirect(url_for("index"))
 
-    # Run pipeline (blocking for MVP)
-    run_pipeline(str(in_dir), str(out_dir), topk=topk, min_cluster_size=mcs)
+    # Run pipeline in background
+    t = Thread(target=_run_job, args=(sid, in_dir, out_dir, topk, mcs), daemon=True)
+    t.start()
+    return redirect(url_for("ui", sid=sid))
 
-    return redirect(url_for("view", sid=sid))
+
+@APP.route("/ui/<sid>")
+def ui(sid: str):
+    # Interactive page: shows progress, then grouped originals
+    page = render_template_string(UI_HTML, sid=sid)
+    return Response(page, mimetype="text/html")
+
+
+@APP.route("/status/<sid>")
+def status(sid: str):
+    import json
+    if sid in JOBS:
+        return Response(json.dumps(JOBS[sid]), mimetype="application/json")
+    cfg = DATA_OUT / sid / "status.json"
+    if cfg.exists():
+        return Response(cfg.read_text(encoding="utf-8"), mimetype="application/json")
+    return Response(json.dumps({"sid": sid, "stage": "unknown", "percent": 0, "done": False}), mimetype="application/json")
+
+
+@APP.route("/group-data/<sid>")
+def group_data(sid: str):
+    import json
+    cfg = DATA_OUT / sid / "clusters.json"
+    if not cfg.exists():
+        return Response(json.dumps({"error": "not_found"}), status=404, mimetype="application/json")
+    data = json.loads(cfg.read_text(encoding="utf-8"))
+    grouping = data.get("grouping", {})
+    return Response(json.dumps(grouping), mimetype="application/json")
 
 
 @APP.route("/view/<sid>")
@@ -180,7 +362,7 @@ def out_files(sid: str, path: str):
 def sessions():
     sids = sorted([p.name for p in (DATA_OUT).glob("*") if p.is_dir()], reverse=True)
     rows = "".join(
-        f"<tr><td><a href='{url_for('view', sid=s)}'>{s}</a></td>"
+        f"<tr><td><a href='{url_for('ui', sid=s)}'>{s}</a></td>"
         f"<td><a class='btn btn-sm btn-outline-primary' href='{url_for('out_files', sid=s, path='clusters.json')}'>JSON</a></td>"
         f"<td><a class='btn btn-sm btn-outline-secondary' href='{url_for('out_files', sid=s, path='faces/')}'>faces/</a></td>"
         f"<td><a class='btn btn-sm btn-outline-success' href='{url_for('groups', sid=s)}'>원본 그룹</a></td></tr>"
@@ -235,9 +417,11 @@ def groups(sid: str):
             f"<div class='col'><a href='{base}{p}' target='_blank'><img class='img-fluid rounded' src='{base}{p}'/></a></div>"
             for p in rels[:12]
         )
+        _fallback = "<div class='text-muted'>이미지 없음</div>"
+        body_thumbs = thumbs if thumbs else _fallback
         persons.append(
             f"<div class='col'><div class='card h-100'><div class='card-header'><strong>인물 {k}</strong> <span class='badge bg-light text-dark'>{len(rels)}</span></div>"
-            f"<div class='card-body'><div class='row row-cols-4 g-2'>{thumbs or '<div class=\'text-muted\'>이미지 없음</div>'}</div></div></div></div>"
+            f"<div class='card-body'><div class='row row-cols-4 g-2'>{body_thumbs}</div></div></div></div>"
         )
     persons_html = "".join(persons) or "<div class='text-muted'>클러스터가 없습니다.</div>"
 

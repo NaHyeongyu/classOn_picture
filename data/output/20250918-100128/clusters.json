@@ -1,0 +1,499 @@
+{
+  "photos": [
+    {
+      "id": 0,
+      "path": "../../input/20250918-100128/IMG_2272.png",
+      "shot_time": "2024:08:16 16:00:26",
+      "width": 1200,
+      "height": 1600,
+      "hash": "dd33a65473f2608a"
+    },
+    {
+      "id": 1,
+      "path": "../../input/20250918-100128/IMG_4736.png",
+      "shot_time": "2025:03:17 15:13:46",
+      "width": 1200,
+      "height": 1600,
+      "hash": "1c64e07b9f5de0b1"
+    },
+    {
+      "id": 2,
+      "path": "../../input/20250918-100128/IMG_5737.png",
+      "shot_time": "2025:01:28 17:27:08",
+      "width": 1200,
+      "height": 1600,
+      "hash": "0059a360f74cac87"
+    },
+    {
+      "id": 3,
+      "path": "../../input/20250918-100128/IMG_5847.png",
+      "shot_time": "2022:07:31 17:20:10",
+      "width": 1600,
+      "height": 1600,
+      "hash": "3f3836ba8661dab3"
+    },
+    {
+      "id": 4,
+      "path": "../../input/20250918-100128/IMG_5916.png",
+      "shot_time": "2022:09:09 12:23:41",
+      "width": 1600,
+      "height": 1600,
+      "hash": "da311684256f3400"
+    },
+    {
+      "id": 5,
+      "path": "../../input/20250918-100128/IMG_6295.png",
+      "shot_time": null,
+      "width": 1080,
+      "height": 1440,
+      "hash": "5f07730213be8bd2"
+    },
+    {
+      "id": 6,
+      "path": "../../input/20250918-100128/IMG_6515.png",
+      "shot_time": "2025:05:31 21:18:43",
+      "width": 1200,
+      "height": 1600,
+      "hash": "feecf35b52445fa1"
+    },
+    {
+      "id": 7,
+      "path": "../../input/20250918-100128/IMG_6563.png",
+      "shot_time": null,
+      "width": 1080,
+      "height": 1440,
+      "hash": "952dc3f3603ed02f"
+    },
+    {
+      "id": 8,
+      "path": "../../input/20250918-100128/IMG_6812.png",
+      "shot_time": "2025:07:11 12:17:49",
+      "width": 1200,
+      "height": 1600,
+      "hash": "bf1a8b709691c76b"
+    },
+    {
+      "id": 9,
+      "path": "../../input/20250918-100128/IMG_6899.png",
+      "shot_time": "2025:07:11 13:20:42",
+      "width": 1200,
+      "height": 1600,
+      "hash": "4ec9ae967ba6e779"
+    },
+    {
+      "id": 10,
+      "path": "../../input/20250918-100128/IMG_7571.png",
+      "shot_time": "2023:03:30 14:14:37",
+      "width": 1200,
+      "height": 1600,
+      "hash": "d8a05b425e3e53d2"
+    },
+    {
+      "id": 11,
+      "path": "../../input/20250918-100128/IMG_8997.png",
+      "shot_time": "2023:10:08 14:02:40",
+      "width": 1200,
+      "height": 1600,
+      "hash": "9e038d0d71de2f8d"
+    },
+    {
+      "id": 12,
+      "path": "../../input/20250918-100128/IMG_9085.png",
+      "shot_time": "2023:10:08 15:13:47",
+      "width": 1200,
+      "height": 1600,
+      "hash": "e46a619600efc2f7"
+    },
+    {
+      "id": 13,
+      "path": "../../input/20250918-100128/IMG_9702.png",
+      "shot_time": "2024:02:02 19:30:21",
+      "width": 1200,
+      "height": 1600,
+      "hash": "9bc5b1252999a20a"
+    }
+  ],
+  "faces": [
+    {
+      "id": 0,
+      "photo_id": 0,
+      "bbox": [
+        517,
+        575,
+        206,
+        234
+      ],
+      "det_score": 0.8255,
+      "smile_prob": 0.4081,
+      "sharpness": 420.79,
+      "brisque": null,
+      "thumb_path": "faces/face_000000.jpg",
+      "cluster_id": 0
+    },
+    {
+      "id": 1,
+      "photo_id": 1,
+      "bbox": [
+        284,
+        708,
+        109,
+        141
+      ],
+      "det_score": 0.8757,
+      "smile_prob": 0.1,
+      "sharpness": 1271.78,
+      "brisque": null,
+      "thumb_path": "faces/face_000001.jpg",
+      "cluster_id": 1
+    },
+    {
+      "id": 2,
+      "photo_id": 2,
+      "bbox": [
+        574,
+        764,
+        84,
+        99
+      ],
+      "det_score": 0.8975,
+      "smile_prob": 0.1,
+      "sharpness": 1452.04,
+      "brisque": null,
+      "thumb_path": "faces/face_000002.jpg",
+      "cluster_id": 1
+    },
+    {
+      "id": 3,
+      "photo_id": 3,
+      "bbox": [
+        889,
+        694,
+        168,
+        218
+      ],
+      "det_score": 0.9101,
+      "smile_prob": 0.1,
+      "sharpness": 736.71,
+      "brisque": null,
+      "thumb_path": "faces/face_000003.jpg",
+      "cluster_id": 0
+    },
+    {
+      "id": 4,
+      "photo_id": 4,
+      "bbox": [
+        1013,
+        973,
+        113,
+        148
+      ],
+      "det_score": 0.8871,
+      "smile_prob": 0.1,
+      "sharpness": 1354.52,
+      "brisque": null,
+      "thumb_path": "faces/face_000004.jpg",
+      "cluster_id": 0
+    },
+    {
+      "id": 5,
+      "photo_id": 5,
+      "bbox": [
+        442,
+        300,
+        181,
+        261
+      ],
+      "det_score": 0.8701,
+      "smile_prob": 0.1,
+      "sharpness": 430.56,
+      "brisque": null,
+      "thumb_path": "faces/face_000005.jpg",
+      "cluster_id": 1
+    },
+    {
+      "id": 6,
+      "photo_id": 5,
+      "bbox": [
+        1028,
+        506,
+        53,
+        67
+      ],
+      "det_score": 0.8629,
+      "smile_prob": 0.1,
+      "sharpness": 396.07,
+      "brisque": null,
+      "thumb_path": "faces/face_000006.jpg",
+      "cluster_id": -1
+    },
+    {
+      "id": 7,
+      "photo_id": 6,
+      "bbox": [
+        444,
+        374,
+        78,
+        103
+      ],
+      "det_score": 0.8481,
+      "smile_prob": 0.1,
+      "sharpness": 120.27,
+      "brisque": null,
+      "thumb_path": "faces/face_000007.jpg",
+      "cluster_id": 1
+    },
+    {
+      "id": 8,
+      "photo_id": 6,
+      "bbox": [
+        779,
+        888,
+        204,
+        261
+      ],
+      "det_score": 0.7772,
+      "smile_prob": 0.3976,
+      "sharpness": 255.23,
+      "brisque": null,
+      "thumb_path": "faces/face_000008.jpg",
+      "cluster_id": 1
+    },
+    {
+      "id": 9,
+      "photo_id": 7,
+      "bbox": [
+        117,
+        661,
+        52,
+        63
+      ],
+      "det_score": 0.9117,
+      "smile_prob": 0.1,
+      "sharpness": 186.17,
+      "brisque": null,
+      "thumb_path": "faces/face_000009.jpg",
+      "cluster_id": -1
+    },
+    {
+      "id": 10,
+      "photo_id": 7,
+      "bbox": [
+        552,
+        460,
+        138,
+        182
+      ],
+      "det_score": 0.9036,
+      "smile_prob": 0.5078,
+      "sharpness": 160.38,
+      "brisque": null,
+      "thumb_path": "faces/face_000010.jpg",
+      "cluster_id": 1
+    },
+    {
+      "id": 11,
+      "photo_id": 8,
+      "bbox": [
+        563,
+        654,
+        74,
+        86
+      ],
+      "det_score": 0.8759,
+      "smile_prob": 0.1,
+      "sharpness": 812.25,
+      "brisque": null,
+      "thumb_path": "faces/face_000011.jpg",
+      "cluster_id": 1
+    },
+    {
+      "id": 12,
+      "photo_id": 9,
+      "bbox": [
+        606,
+        770,
+        63,
+        75
+      ],
+      "det_score": 0.8907,
+      "smile_prob": 0.1,
+      "sharpness": 1136.42,
+      "brisque": null,
+      "thumb_path": "faces/face_000012.jpg",
+      "cluster_id": 1
+    },
+    {
+      "id": 13,
+      "photo_id": 10,
+      "bbox": [
+        684,
+        942,
+        52,
+        62
+      ],
+      "det_score": 0.916,
+      "smile_prob": 0.1,
+      "sharpness": 1263.34,
+      "brisque": null,
+      "thumb_path": "faces/face_000013.jpg",
+      "cluster_id": 0
+    },
+    {
+      "id": 14,
+      "photo_id": 11,
+      "bbox": [
+        714,
+        765,
+        91,
+        135
+      ],
+      "det_score": 0.8296,
+      "smile_prob": 0.1,
+      "sharpness": 1678.26,
+      "brisque": null,
+      "thumb_path": "faces/face_000014.jpg",
+      "cluster_id": 0
+    },
+    {
+      "id": 15,
+      "photo_id": 12,
+      "bbox": [
+        721,
+        883,
+        84,
+        115
+      ],
+      "det_score": 0.9047,
+      "smile_prob": 0.1,
+      "sharpness": 813.67,
+      "brisque": null,
+      "thumb_path": "faces/face_000015.jpg",
+      "cluster_id": 0
+    },
+    {
+      "id": 16,
+      "photo_id": 13,
+      "bbox": [
+        533,
+        770,
+        127,
+        158
+      ],
+      "det_score": 0.9226,
+      "smile_prob": 0.1,
+      "sharpness": 455.88,
+      "brisque": null,
+      "thumb_path": "faces/face_000016.jpg",
+      "cluster_id": 0
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 0,
+      "is_noise": false,
+      "size": 7,
+      "member_face_ids": [
+        0,
+        3,
+        4,
+        13,
+        14,
+        15,
+        16
+      ],
+      "stats": {
+        "avg_smile": 0.144,
+        "avg_sharpness": 960.45
+      },
+      "top": [
+        {
+          "face_id": 14,
+          "score": 0.46,
+          "smile": 0.1,
+          "sharpness": 1678.26,
+          "thumb_path": "faces/face_000014.jpg",
+          "photo_path": "../../input/20250918-100128/IMG_8997.png"
+        },
+        {
+          "face_id": 4,
+          "score": 0.3769,
+          "smile": 0.1,
+          "sharpness": 1354.52,
+          "thumb_path": "faces/face_000004.jpg",
+          "photo_path": "../../input/20250918-100128/IMG_5916.png"
+        },
+        {
+          "face_id": 13,
+          "score": 0.3535,
+          "smile": 0.1,
+          "sharpness": 1263.34,
+          "thumb_path": "faces/face_000013.jpg",
+          "photo_path": "../../input/20250918-100128/IMG_7571.png"
+        }
+      ]
+    },
+    {
+      "cluster_id": 1,
+      "is_noise": false,
+      "size": 8,
+      "member_face_ids": [
+        1,
+        2,
+        5,
+        7,
+        8,
+        10,
+        11,
+        12
+      ],
+      "stats": {
+        "avg_smile": 0.1882,
+        "avg_sharpness": 704.87
+      },
+      "top": [
+        {
+          "face_id": 2,
+          "score": 0.4019,
+          "smile": 0.1,
+          "sharpness": 1452.04,
+          "thumb_path": "faces/face_000002.jpg",
+          "photo_path": "../../input/20250918-100128/IMG_5737.png"
+        },
+        {
+          "face_id": 1,
+          "score": 0.3556,
+          "smile": 0.1,
+          "sharpness": 1271.78,
+          "thumb_path": "faces/face_000001.jpg",
+          "photo_path": "../../input/20250918-100128/IMG_4736.png"
+        },
+        {
+          "face_id": 12,
+          "score": 0.3209,
+          "smile": 0.1,
+          "sharpness": 1136.42,
+          "thumb_path": "faces/face_000012.jpg",
+          "photo_path": "../../input/20250918-100128/IMG_6899.png"
+        }
+      ]
+    },
+    {
+      "cluster_id": -1,
+      "is_noise": true,
+      "size": 2,
+      "member_face_ids": [
+        6,
+        9
+      ],
+      "stats": {
+        "avg_smile": 0.1,
+        "avg_sharpness": 291.12
+      },
+      "top": []
+    }
+  ],
+  "params": {
+    "topk": 3,
+    "min_cluster_size": 5
+  }
+}

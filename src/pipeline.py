@@ -4,7 +4,7 @@ import os
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 from tqdm import tqdm
@@ -63,13 +63,23 @@ def run_pipeline(
     topk: int = 3,
     min_cluster_size: int = 5,
     link_originals: bool = False,
+    progress_cb: Optional[Callable[[str, float, Dict], None]] = None,
 ) -> Dict:
     out_root = Path(output_dir)
     faces_dir = ensure_dir(out_root / "faces")
     cache_dir = ensure_dir(out_root / "cache")
 
+    # Progress helper
+    def _progress(stage: str, pct: float, extra: Dict = {}):
+        try:
+            if progress_cb:
+                progress_cb(stage, float(max(0.0, min(100.0, pct))), extra)
+        except Exception:
+            pass
+
     # Scan inputs
     img_paths = iter_images(input_dir)
+    _progress("scan", 5.0, {"total_images": len(img_paths)})
     if not img_paths:
         logger.warning("No input images found.")
         return {}
@@ -86,6 +96,8 @@ def run_pipeline(
 
     face_id = 0
     photo_id = 0
+    total = len(img_paths)
+    processed = 0
     for p in tqdm(img_paths, desc="Processing images"):
         try:
             li = load_image(p)
@@ -146,6 +158,10 @@ def run_pipeline(
             face_id += 1
 
         photo_id += 1
+        processed += 1
+        # Map image processing progress to 10% -> 70%
+        pct = 10.0 + 60.0 * (processed / max(1, total))
+        _progress("process_images", pct, {"processed": processed, "total": total})
 
     if not embeddings:
         logger.warning("No faces detected with embeddings. Nothing to cluster.")
@@ -156,6 +172,7 @@ def run_pipeline(
     np.save(cache_dir / "face_embeddings.npy", emb_arr)
 
     # Cluster
+    _progress("clustering", 75.0, {"faces": len(faces)})
     labels, model = cluster_embeddings(emb_arr, min_cluster_size=min_cluster_size)
     for f in faces:
         f.cluster_id = int(labels[f.embedding_idx])
@@ -167,6 +184,8 @@ def run_pipeline(
     final_scores: List[float] = []
     for f, sn in zip(faces, sharp_norm):
         final_scores.append(0.6 * f.smile_prob + 0.4 * sn)
+
+    _progress("scoring", 82.0, {})
 
     # Build clusters
     clusters: Dict[int, Dict] = {}
@@ -249,7 +268,8 @@ def run_pipeline(
     }
     write_json(out_root / "clusters.json", out)
 
-    # Render report
+    # Group original photos by cluster into grouped_photos/
+    _progress("grouping", 90.0, {})
     # Group original photos by cluster into grouped_photos/
     grouped_root = ensure_dir(out_root / "grouped_photos")
     cluster_to_photos: Dict[str, List[str]] = {}
@@ -304,7 +324,9 @@ def run_pipeline(
     }
 
     # Render report
+    _progress("report", 96.0, {})
     render_report(out_root, out)
 
+    _progress("done", 100.0, {"photos": len(photos), "faces": len(faces)})
     logger.info(f"Processed {len(photos)} photos, {len(faces)} faces → {len([c for c in clusters if c!=-1])} clusters.")
     return out
