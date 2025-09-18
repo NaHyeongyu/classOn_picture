@@ -7,9 +7,11 @@ import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Any
+import uuid
+import json
 from threading import Thread
 
-from flask import Flask, Response, flash, redirect, render_template_string, request, send_from_directory, url_for
+from flask import Flask, Response, flash, redirect, render_template_string, request, send_from_directory, url_for, jsonify
 
 # Ensure src is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -21,12 +23,14 @@ from src.utils.logging import setup_logger  # noqa: E402
 
 logger = setup_logger()
 
-APP = Flask(__name__)
-APP.secret_key = os.environ.get("FACE_MVP_SECRET", "dev-secret")
-
 BASE_DIR = Path(__file__).resolve().parent.parent
+STATIC_DIR = BASE_DIR / "scripts" / "webui" / "static"
 DATA_IN = BASE_DIR / "data" / "input"
 DATA_OUT = BASE_DIR / "data" / "output"
+
+# Serve SPA static files at root path
+APP = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/")
+APP.secret_key = os.environ.get("FACE_MVP_SECRET", "dev-secret")
 
 # In-memory job states (simple MVP)
 JOBS: Dict[str, Dict[str, Any]] = {}
@@ -216,9 +220,116 @@ UI_HTML = """
 
 
 @APP.route("/")
-def index() -> str:
-    recent = sorted([p.name for p in (DATA_OUT).glob("*") if p.is_dir()])[-5:][::-1]
-    return render_template_string(INDEX_HTML, recent=recent)
+def index() -> Response:
+    # Serve SPA entrypoint
+    return send_from_directory(STATIC_DIR, "index.html")
+
+
+@APP.route("/api/upload", methods=["POST"])
+def api_upload() -> Response:
+    files = request.files.getlist("files") or request.files.getlist("images")
+    if not files:
+        return jsonify({"error": "no_files"}), 400
+    topk = int(request.form.get("topk", 3))
+    mcs = int(request.form.get("mcs", 5))
+
+    job_id = uuid.uuid4().hex
+    in_dir = ensure_dir(DATA_IN / job_id)
+    out_dir = ensure_dir(DATA_OUT / job_id)
+
+    saved = 0
+    for f in files:
+        if not f.filename:
+            continue
+        fname = Path(f.filename).name
+        if not any(fname.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png"]):
+            continue
+        (in_dir / fname).write_bytes(f.read())
+        saved += 1
+    if saved == 0:
+        return jsonify({"error": "no_supported_files"}), 400
+
+    t = Thread(target=_run_job, args=(job_id, in_dir, out_dir, topk, mcs), daemon=True)
+    t.start()
+    return jsonify({"job_id": job_id})
+
+
+@APP.get("/api/progress")
+def api_progress() -> Response:
+    job_id = request.args.get("job_id", "").strip()
+    if not job_id:
+        return jsonify({"error": "missing_job_id"}), 400
+    st = JOBS.get(job_id)
+    if not st:
+        cfg = DATA_OUT / job_id / "status.json"
+        if cfg.exists():
+            try:
+                st = json.loads(cfg.read_text(encoding="utf-8"))
+            except Exception:
+                st = None
+    if not st:
+        return jsonify({"phase": "queued", "progress": 0.0, "counts": {}})
+
+    percent = float(st.get("percent", 0.0))
+    phase = st.get("stage") or st.get("phase") or "running"
+    extra = st.get("extra") or {}
+    counts = {
+        "photos_done": int(extra.get("processed", extra.get("photos", 0)) or 0),
+        "faces_done": int(extra.get("faces", 0) or 0),
+        "faces_total_est": int(extra.get("faces", 0) or 0),
+    }
+    return jsonify({
+        "phase": phase,
+        "progress": max(0.0, min(1.0, percent / 100.0)),
+        "counts": counts,
+    })
+
+
+@APP.get("/api/result")
+def api_result() -> Response:
+    job_id = request.args.get("job_id", "").strip()
+    if not job_id:
+        return jsonify({"error": "missing_job_id"}), 400
+    cfg = DATA_OUT / job_id / "clusters.json"
+    if not cfg.exists():
+        return jsonify({"error": "not_found"}), 404
+    try:
+        data = json.loads(cfg.read_text(encoding="utf-8"))
+    except Exception as e:
+        return jsonify({"error": "invalid_json", "message": str(e)}), 500
+
+    grouping = data.get("grouping", {})
+    clusters_map: Dict[str, List[str]] = grouping.get("clusters_to_photos", {})
+    numeric_ids = sorted([int(k) for k in clusters_map.keys() if str(k).isdigit()])
+    clusters_out: List[Dict[str, Any]] = []
+    for idx, cid in enumerate(numeric_ids, start=1):
+        rels = clusters_map.get(str(cid), [])
+        originals = [{
+            "photo": f"/out/{job_id}/{p}",
+            "thumb": f"/out/{job_id}/{p}",
+        } for p in rels]
+        clusters_out.append({
+            "cluster_id": cid,
+            "name": f"인물 {idx}",
+            "originals": originals,
+        })
+
+    noise = clusters_map.get("noise", [])
+    no_face = grouping.get("no_face", [])
+    unassigned = [{
+        "photo": f"/out/{job_id}/{p}",
+        "thumb": f"/out/{job_id}/{p}",
+    } for p in (noise + no_face)]
+
+    meta = {
+        "total_photos": len(data.get("photos", [])),
+        "total_faces": len(data.get("faces", [])),
+    }
+    return jsonify({
+        "meta": meta,
+        "clusters": clusters_out,
+        "unassigned": unassigned,
+    })
 
 
 def _save_status(sid: str, out_dir: Path, stage: str, percent: float, extra: Dict[str, Any] | None = None) -> None:
