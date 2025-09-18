@@ -41,13 +41,51 @@ async function startUpload(files) {
   setBusy(true);
   updateProgress("업로드", 0.0);
   try {
-    const fd = new FormData();
-    Array.from(files).forEach((f) => fd.append("files", f, f.name));
-    const res = await fetch("/api/upload", { method: "POST", body: fd });
-    if (!res.ok) throw new Error(`업로드 실패 (${res.status})`);
-    const data = await res.json();
-    jobId = data.job_id;
-    if (!jobId) throw new Error("job_id 없음");
+    const topk = Math.max(1, parseInt(el("optTopk").value || "3", 10));
+    const mcs = Math.max(2, parseInt(el("optMcs").value || "5", 10));
+    const link = el("optLink").checked;
+    const chunkMb = Math.max(0.25, parseFloat(el("optChunk").value || "1"));
+    const CHUNK = Math.floor(chunkMb * 1024 * 1024);
+
+    let localJobId = null;
+    const totalBytes = files.reduce((s, f) => s + (f.size || 0), 0);
+    let sent = 0;
+
+    for (let fi = 0; fi < files.length; fi++) {
+      const f = files[fi];
+      const parts = Math.max(1, Math.ceil(f.size / CHUNK));
+      for (let pi = 0; pi < parts; pi++) {
+        const start = pi * CHUNK;
+        const end = Math.min(f.size, start + CHUNK);
+        const blob = f.slice(start, end);
+        const isLastChunkOfFile = pi === parts - 1;
+        const isLastOverall = (fi === files.length - 1) && isLastChunkOfFile;
+
+        const fd = new FormData();
+        fd.append("chunk", blob, `${f.name}.part-${pi}`);
+        fd.append("file_name", f.name);
+        fd.append("chunk_index", String(pi));
+        fd.append("chunk_total", String(parts));
+        if (localJobId) fd.append("job_id", localJobId);
+        if (isLastOverall) {
+          fd.append("final", "1");
+          fd.append("topk", String(topk));
+          fd.append("mcs", String(mcs));
+          if (link) fd.append("link", "1");
+        }
+        const res = await fetch("/api/upload", { method: "POST", body: fd });
+        if (!res.ok) throw new Error(`업로드 실패 (${res.status})`);
+        const data = await res.json();
+        localJobId = data.job_id || localJobId;
+        sent += blob.size;
+        const up = Math.min(99, Math.round((sent / Math.max(1, totalBytes)) * 100));
+        el("phaseLabel").textContent = "업로드";
+        el("percentLabel").textContent = `${up}%`;
+        el("progressBar").style.width = `${up}%`;
+      }
+    }
+    if (!localJobId) throw new Error("job_id 없음");
+    jobId = localJobId;
     startPolling(jobId);
   } catch (e) {
     console.error(e);
@@ -204,4 +242,3 @@ function bindUI() {
 }
 
 window.addEventListener("DOMContentLoaded", bindUI);
-

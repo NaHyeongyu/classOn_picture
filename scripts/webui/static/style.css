@@ -34,6 +34,12 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
 .btn.primary[disabled], .btn[disabled] { opacity: 0.5; cursor: not-allowed; }
 .muted { color: var(--muted); font-size: 13px; }
 
+.options { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; align-items: center; }
+.options label { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); background: #12151a; border: 1px solid var(--border); padding: 6px 8px; border-radius: 8px; }
+.options label input[type="number"] { width: 72px; background: transparent; border: 1px solid var(--border); color: var(--fg); padding: 4px 6px; border-radius: 6px; }
+.options .chk { background: transparent; border: none; padding: 0; }
+.options details { color: var(--muted); }
+
 .progress { width: 100%; height: 10px; background: #1d2026; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
 .progress-bar { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), #7aa8ff); transition: width .2s ease; }
 .progress-head { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 14px; color: var(--muted); }
@@ -59,4 +65,3 @@ html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); fon
   .title { font-size: 20px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); }
 }
-

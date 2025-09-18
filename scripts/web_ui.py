@@ -267,6 +267,7 @@ def api_upload() -> Response:
         return jsonify({"error": "no_files"}), 400
     topk = int(request.form.get("topk", 3))
     mcs = int(request.form.get("mcs", 5))
+    link_flag = (request.form.get("link") or "").lower() in {"1", "true", "yes", "y"}
 
     req_job = (request.form.get("job_id") or "").strip()
     final_flag = (request.form.get("final") or "").lower() in {"1", "true", "yes", "y"}
@@ -327,16 +328,16 @@ def api_upload() -> Response:
     # - If job_id not provided: start immediately unless final=0 is explicitly given
     if req_job:
         if final_flag:
-            t = Thread(target=_run_job, args=(job_id, in_dir, out_dir, topk, mcs), daemon=True)
+            t = Thread(target=_run_job, args=(job_id, in_dir, out_dir, topk, mcs, link_flag), daemon=True)
             t.start()
             started = True
     else:
         if not (request.form.get("final") or ""):  # backward compat: start on single-shot upload
-            t = Thread(target=_run_job, args=(job_id, in_dir, out_dir, topk, mcs), daemon=True)
+            t = Thread(target=_run_job, args=(job_id, in_dir, out_dir, topk, mcs, link_flag), daemon=True)
             t.start()
             started = True
         elif final_flag:
-            t = Thread(target=_run_job, args=(job_id, in_dir, out_dir, topk, mcs), daemon=True)
+            t = Thread(target=_run_job, args=(job_id, in_dir, out_dir, topk, mcs, link_flag), daemon=True)
             t.start()
             started = True
 
@@ -440,13 +441,13 @@ def _save_status(sid: str, out_dir: Path, stage: str, percent: float, extra: Dic
         pass
 
 
-def _run_job(sid: str, in_dir: Path, out_dir: Path, topk: int, mcs: int) -> None:
+def _run_job(sid: str, in_dir: Path, out_dir: Path, topk: int, mcs: int, link_originals: bool = False) -> None:
     def cb(stage: str, pct: float, extra: Dict):
         _save_status(sid, out_dir, stage, pct, extra)
 
     try:
         _save_status(sid, out_dir, "start", 0.0, {})
-        run_pipeline(str(in_dir), str(out_dir), topk=topk, min_cluster_size=mcs, progress_cb=cb)
+        run_pipeline(str(in_dir), str(out_dir), topk=topk, min_cluster_size=mcs, progress_cb=cb, link_originals=link_originals)
         _save_status(sid, out_dir, "done", 100.0, {})
     except Exception as e:
         _save_status(sid, out_dir, "error", 100.0, {"message": str(e)})
