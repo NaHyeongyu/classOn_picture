@@ -8,6 +8,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 from tqdm import tqdm
+from PIL import Image
 
 from src.utils.fs import ensure_dir, iter_images, file_hash, write_json, link_or_copy
 from src.utils.image import load_image, crop_with_margin
@@ -82,7 +83,16 @@ def run_pipeline(
     _progress("scan", 5.0, {"total_images": len(img_paths)})
     if not img_paths:
         logger.warning("No input images found.")
-        return {}
+        out = {
+            "photos": [],
+            "faces": [],
+            "clusters": [],
+            "params": {"topk": topk, "min_cluster_size": min_cluster_size},
+            "grouping": {"grouped_dir": "grouped_photos", "clusters_to_photos": {}, "no_face": []},
+        }
+        write_json(out_root / "clusters.json", out)
+        render_report(out_root, out)
+        return out
 
     # Models
     detector = InsightFaceDetector()
@@ -165,7 +175,38 @@ def run_pipeline(
 
     if not embeddings:
         logger.warning("No faces detected with embeddings. Nothing to cluster.")
-        return {}
+        photos_json = [
+            {
+                "id": p.id,
+                "path": os.path.relpath(p.path, start=out_root),
+                "shot_time": p.shot_time,
+                "width": p.width,
+                "height": p.height,
+                "hash": p.hash,
+            }
+            for p in photos
+        ]
+        out = {
+            "photos": photos_json,
+            "faces": [],
+            "clusters": [],
+            "params": {"topk": topk, "min_cluster_size": min_cluster_size},
+        }
+        grouped_root = ensure_dir(out_root / "grouped_photos")
+        noface_dir = ensure_dir(grouped_root / "no_face")
+        noface_rels: List[str] = []
+        for p in photos:
+            dst = noface_dir / Path(p.path).name
+            link_or_copy(p.path, dst, mode="symlink" if link_originals else "copy")
+            noface_rels.append(os.path.relpath(dst, start=out_root))
+        out["grouping"] = {
+            "grouped_dir": os.path.relpath(grouped_root, start=out_root),
+            "clusters_to_photos": {},
+            "no_face": noface_rels,
+        }
+        write_json(out_root / "clusters.json", out)
+        render_report(out_root, out)
+        return out
 
     # Save embedding cache
     emb_arr = np.stack(embeddings, axis=0)
@@ -174,6 +215,13 @@ def run_pipeline(
     # Cluster
     _progress("clustering", 75.0, {"faces": len(faces)})
     labels, model = cluster_embeddings(emb_arr, min_cluster_size=min_cluster_size)
+    pos = [lab for lab in set(labels.tolist()) if lab != -1]
+    if len(pos) == 0:
+        # Fallback for small batches: relax parameters
+        new_mcs = 2 if emb_arr.shape[0] >= 2 else 1
+        _progress("clustering_retry", 78.0, {"orig_mcs": min_cluster_size, "new_mcs": new_mcs})
+        labels, model = cluster_embeddings(emb_arr, min_cluster_size=new_mcs, min_samples=1)
+        logger.info(f"No clusters at mcs={min_cluster_size}; retried with mcs={new_mcs}, min_samples=1")
     for f in faces:
         f.cluster_id = int(labels[f.embedding_idx])
 
@@ -322,6 +370,56 @@ def run_pipeline(
         "clusters_to_photos": cluster_to_photos,
         "no_face": noface_rels,
     }
+
+    # Generate previews (WEBP) for grouped photos to speed up modal rendering
+    preview_root = ensure_dir(out_root / "previews")
+
+    def _make_preview(src_abs: Path, dst_abs: Path, max_side: int = 1200) -> None:
+        try:
+            dst_abs.parent.mkdir(parents=True, exist_ok=True)
+            with Image.open(str(src_abs)) as im:
+                im = im.convert("RGB")
+                w, h = im.size
+                scale = 1.0
+                if max(w, h) > max_side:
+                    scale = max_side / float(max(w, h))
+                    im = im.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+                im.save(str(dst_abs), format="WEBP", quality=80, method=6)
+        except Exception:
+            # Best-effort; ignore preview failure
+            pass
+
+    # Build list of rel paths from grouping
+    def _all_grouped_rels() -> List[str]:
+        rels_all: List[str] = []
+        for k, rels in cluster_to_photos.items():
+            rels_all.extend(rels)
+        rels_all.extend(noface_rels)
+        return rels_all
+
+    for rel in _all_grouped_rels():
+        # rel is relative to out_root, starts with grouped_photos/
+        try:
+            rel_path = Path(rel)
+            if rel_path.parts and rel_path.parts[0] == "grouped_photos":
+                tail = Path(*rel_path.parts[1:])
+                prev_rel = Path("previews") / tail
+            else:
+                # Fallback mirror structure
+                prev_rel = Path("previews") / rel_path
+            prev_rel = prev_rel.with_suffix('.webp')
+            src_abs = out_root / rel
+            dst_abs = out_root / prev_rel
+            if not dst_abs.exists():
+                _make_preview(src_abs, dst_abs)
+        except Exception:
+            pass
+
+    # Persist final JSON including grouping for API consumers
+    write_json(out_root / "clusters.json", out)
+
+    # Persist final JSON including grouping for API consumers
+    write_json(out_root / "clusters.json", out)
 
     # Render report
     _progress("report", 96.0, {})

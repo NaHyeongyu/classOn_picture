@@ -396,12 +396,25 @@ def api_result() -> Response:
     clusters_map: Dict[str, List[str]] = grouping.get("clusters_to_photos", {})
     numeric_ids = sorted([int(k) for k in clusters_map.keys() if str(k).isdigit()])
     clusters_out: List[Dict[str, Any]] = []
+    def _mk_item(p: str) -> Dict[str, str]:
+        try:
+            from pathlib import Path as _P
+            rp = _P(p)
+            if len(rp.parts) and rp.parts[0] == 'grouped_photos':
+                tail = _P(*rp.parts[1:])
+                prev_rel = _P('previews') / tail
+            else:
+                prev_rel = _P('previews') / rp
+            prev_rel = prev_rel.with_suffix('.webp')
+            prev_url = f"/out/{job_id}/{prev_rel.as_posix()}"
+        except Exception:
+            prev_url = f"/out/{job_id}/{p}"
+        base_url = f"/out/{job_id}/{p}"
+        return {"photo": base_url, "thumb": prev_url, "preview": prev_url}
+
     for idx, cid in enumerate(numeric_ids, start=1):
         rels = clusters_map.get(str(cid), [])
-        originals = [{
-            "photo": f"/out/{job_id}/{p}",
-            "thumb": f"/out/{job_id}/{p}",
-        } for p in rels]
+        originals = [_mk_item(p) for p in rels]
         clusters_out.append({
             "cluster_id": cid,
             "name": f"인물 {idx}",
@@ -410,10 +423,7 @@ def api_result() -> Response:
 
     noise = clusters_map.get("noise", [])
     no_face = grouping.get("no_face", [])
-    unassigned = [{
-        "photo": f"/out/{job_id}/{p}",
-        "thumb": f"/out/{job_id}/{p}",
-    } for p in (noise + no_face)]
+    unassigned = [_mk_item(p) for p in (noise + no_face)]
 
     meta = {
         "total_photos": len(data.get("photos", [])),
@@ -424,6 +434,54 @@ def api_result() -> Response:
         "clusters": clusters_out,
         "unassigned": unassigned,
     })
+
+
+@APP.post("/api/delete")
+def api_delete() -> Response:
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        payload = {}
+    job_id = (payload.get("job_id") or "").strip()
+    rel = (payload.get("path") or "").strip()
+    if not job_id or not rel:
+        return jsonify({"error": "missing_params"}), 400
+    base = DATA_OUT / job_id
+    cfg = base / "clusters.json"
+    if not cfg.exists():
+        return jsonify({"error": "not_found"}), 404
+    # Normalize and validate path
+    target = (base / rel).resolve()
+    if not str(target).startswith(str(base.resolve())):
+        return jsonify({"error": "invalid_path"}), 400
+    # Update grouping JSON
+    import json as _json
+    data = _json.loads(cfg.read_text(encoding="utf-8"))
+    grouping = data.get("grouping") or {}
+    ctps = grouping.get("clusters_to_photos") or {}
+    changed = False
+    # Remove from any cluster lists
+    for k, lst in list(ctps.items()):
+        if rel in lst:
+            lst2 = [x for x in lst if x != rel]
+            ctps[k] = lst2
+            changed = True
+    grouping["clusters_to_photos"] = ctps
+    # Remove from no_face
+    nf = grouping.get("no_face") or []
+    if rel in nf:
+        grouping["no_face"] = [x for x in nf if x != rel]
+        changed = True
+    if changed:
+        data["grouping"] = grouping
+        cfg.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    # Delete physical file (best effort)
+    try:
+        if target.exists() or target.is_symlink():
+            target.unlink()
+    except Exception:
+        pass
+    return jsonify({"ok": True, "removed": rel})
 
 
 def _save_status(sid: str, out_dir: Path, stage: str, percent: float, extra: Dict[str, Any] | None = None) -> None:
@@ -560,7 +618,7 @@ def report(sid: str):
 @APP.route("/out/<sid>/<path:path>")
 def out_files(sid: str, path: str):
     out_dir = DATA_OUT / sid
-    return send_from_directory(out_dir, path)
+    return send_from_directory(out_dir, path, max_age=3600)
 
 
 @APP.route("/sessions")

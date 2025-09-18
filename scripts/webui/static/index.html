@@ -65,5 +65,29 @@
     <footer class="container footer">
       <small>Top‑3/얼굴크롭 UI 제거됨. 원본 중심 미분류 포함 UI.</small>
     </footer>
+
+    <!-- 이미지 미리보기 모달 -->
+    <div id="imgModal" class="modal" aria-hidden="true" role="dialog" aria-label="이미지 미리보기">
+      <div class="modal-dialog">
+        <button id="modalClose" class="modal-close" aria-label="닫기">×</button>
+        <img id="modalImg" alt="미리보기" />
+        <div class="modal-actions">
+          <a id="modalOpenNew" href="#" target="_blank" rel="noopener">새 탭에서 열기</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- 삭제 확인 모달 -->
+    <div id="confirmModal" class="modal" aria-hidden="true" role="dialog" aria-label="삭제 확인">
+      <div class="modal-dialog">
+        <div class="card" style="min-width: 280px; max-width: 420px;">
+          <div id="confirmMsg" class="mb-2">이 사진을 삭제할까요?</div>
+          <div class="modal-actions" style="display:flex; gap:8px; justify-content:flex-end;">
+            <button id="confirmNo" class="btn">취소</button>
+            <button id="confirmYes" class="btn danger">삭제</button>
+          </div>
+        </div>
+      </div>
+    </div>
   </body>
   </html>

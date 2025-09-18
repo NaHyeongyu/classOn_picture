@@ -1,6 +1,7 @@
 let selectedFiles = [];
 let jobId = null;
 let pollTimer = null;
+let modalEl = null; let modalImg = null; let modalOpenNew = null; let modalCloseBtn = null;
 
 const el = (id) => document.getElementById(id);
 
@@ -162,18 +163,46 @@ function renderClusters(clusters) {
     const grid = document.createElement("div");
     grid.className = "grid";
     list.forEach((it, i) => {
+      const wrap = document.createElement("div");
+      wrap.className = "thumb-wrap";
       const a = document.createElement("a");
       a.href = it.photo;
-      a.target = "_blank";
-      a.rel = "noopener";
-      a.title = `${n} 원본 열기`;
+      a.title = `${n} 원본 미리보기`;
       a.tabIndex = 0;
       const img = document.createElement("img");
       img.src = it.thumb || it.photo;
       img.alt = `${n} 원본 썸네일 ${i + 1}`;
       img.className = "thumb";
       a.appendChild(img);
-      grid.appendChild(a);
+      a.addEventListener("click", (e) => { e.preventDefault(); window.__openModal(it.photo); });
+      const rel = it.photo.replace(new RegExp(`^/out/${jobId}/`), "");
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "del-btn";
+      btn.innerHTML = "×";
+      btn.title = "삭제";
+      btn.addEventListener("click", async (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const ok = await window.__confirm("이 썸네일을 삭제할까요? (원본 그룹에서 제거)");
+        if (!ok) return;
+        try {
+          const res = await fetch("/api/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_id: jobId, path: rel }) });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          wrap.remove();
+          // If grid becomes empty, show '이미지 없음'
+          if (grid.querySelectorAll(".thumb-wrap").length === 0) {
+            const empty = document.createElement("div");
+            empty.className = "muted";
+            empty.textContent = "이미지 없음";
+            grid.appendChild(empty);
+          }
+        } catch (err) {
+          notify(`삭제 실패: ${err.message || err}`, "error");
+        }
+      });
+      wrap.appendChild(a);
+      wrap.appendChild(btn);
+      grid.appendChild(wrap);
     });
     body.appendChild(grid);
     card.appendChild(header);
@@ -192,18 +221,42 @@ function renderUnassigned(items) {
   const root = el("unassigned");
   root.innerHTML = "";
   items.forEach((it, i) => {
+    const wrap = document.createElement("div");
+    wrap.className = "thumb-wrap";
     const a = document.createElement("a");
     a.href = it.photo;
-    a.target = "_blank";
-    a.rel = "noopener";
-    a.title = `원본 열기`;
+    a.title = `원본 미리보기`;
     a.tabIndex = 0;
     const img = document.createElement("img");
     img.src = it.thumb || it.photo;
     img.alt = `분리되지 않은 원본 썸네일 ${i + 1}`;
     img.className = "thumb";
     a.appendChild(img);
-    root.appendChild(a);
+    a.addEventListener("click", (e) => { e.preventDefault(); window.__openModal(it.photo); });
+    const rel = it.photo.replace(new RegExp(`^/out/${jobId}/`), "");
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "del-btn";
+    btn.innerHTML = "×";
+    btn.title = "삭제";
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const ok = await window.__confirm("이 썸네일을 삭제할까요? (원본 그룹에서 제거)");
+      if (!ok) return;
+      try {
+        const res = await fetch("/api/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ job_id: jobId, path: rel }) });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        wrap.remove();
+        if (root.querySelectorAll(".thumb-wrap").length === 0) {
+          root.innerHTML = "<div class='muted'>없음</div>";
+        }
+      } catch (err) {
+        notify(`삭제 실패: ${err.message || err}`, "error");
+      }
+    });
+    wrap.appendChild(a);
+    wrap.appendChild(btn);
+    root.appendChild(wrap);
   });
   if (!items.length) {
     root.innerHTML = "<div class=\"muted\">없음</div>";
@@ -215,6 +268,34 @@ function bindUI() {
   const fileInput = el("fileInput");
   const chooseBtn = el("chooseBtn");
   const uploadBtn = el("uploadBtn");
+
+  // Modal refs
+  modalEl = el("imgModal");
+  modalImg = el("modalImg");
+  modalOpenNew = el("modalOpenNew");
+  modalCloseBtn = el("modalClose");
+  const closeModal = () => { modalEl.classList.remove("show"); modalEl.setAttribute("aria-hidden", "true"); document.body.style.overflow = ""; };
+  const openModal = (src) => { modalImg.src = src; modalOpenNew.href = src; modalEl.classList.add("show"); modalEl.setAttribute("aria-hidden", "false"); document.body.style.overflow = "hidden"; };
+  modalCloseBtn.addEventListener("click", closeModal);
+  modalEl.addEventListener("click", (e) => { if (e.target === modalEl) closeModal(); });
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape" && modalEl.classList.contains("show")) closeModal(); });
+
+  // Confirm modal
+  confirmEl = el("confirmModal");
+  confirmYes = el("confirmYes");
+  confirmNo = el("confirmNo");
+  confirmMsg = el("confirmMsg");
+  const closeConfirm = () => { confirmEl.classList.remove("show"); confirmEl.setAttribute("aria-hidden", "true"); document.body.style.overflow = ""; };
+  const openConfirm = (message) => {
+    confirmMsg.textContent = message || "이 작업을 진행할까요?";
+    confirmEl.classList.add("show");
+    confirmEl.setAttribute("aria-hidden", "false");
+    document.body.style.overflow = "hidden";
+    return new Promise((resolve) => { __confirmResolver = resolve; });
+  };
+  confirmYes.addEventListener("click", () => { if (__confirmResolver) __confirmResolver(true); closeConfirm(); });
+  confirmNo.addEventListener("click", () => { if (__confirmResolver) __confirmResolver(false); closeConfirm(); });
+  confirmEl.addEventListener("click", (e) => { if (e.target === confirmEl) { if (__confirmResolver) __confirmResolver(false); closeConfirm(); } });
 
   const updateCount = () => {
     el("fileCount").textContent = selectedFiles.length ? `${selectedFiles.length}개 선택됨` : "";
@@ -244,6 +325,10 @@ function bindUI() {
   });
   chooseBtn.addEventListener("click", () => fileInput.click());
   uploadBtn.addEventListener("click", () => startUpload(selectedFiles));
+
+  // Expose modal handlers to render functions
+  window.__openModal = openModal;
+  window.__confirm = openConfirm;
 }
 
 window.addEventListener("DOMContentLoaded", bindUI);
