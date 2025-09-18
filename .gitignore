@@ -4,10 +4,10 @@ __pycache__/
 .DS_Store
 
 # Output artifacts
-data/output/faces/
-data/output/cache/
-data/output/clusters.json
-data/output/report.html
+data/output/*
+!data/output/.gitkeep
+data/input/*
+!data/input/.gitkeep
 
 # InsightFace cache (if present in repo)
 .insightface/
