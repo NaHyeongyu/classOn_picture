@@ -32,6 +32,14 @@ DATA_OUT = BASE_DIR / "data" / "output"
 APP = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/")
 APP.secret_key = os.environ.get("FACE_MVP_SECRET", "dev-secret")
 
+# Optional CORS for cross-origin frontends (e.g., Vite dev server)
+try:
+    from flask_cors import CORS
+
+    CORS(APP, resources={r"/api/*": {"origins": "*"}, r"/out/*": {"origins": "*"}})
+except Exception:
+    pass
+
 # In-memory job states (simple MVP)
 JOBS: Dict[str, Dict[str, Any]] = {}
 

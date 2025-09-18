@@ -12,3 +12,4 @@ Pillow>=9.5.0
 # Optional: BRISQUE (will be used if available)
 pybrisque>=1.0
 Flask>=3.0.0
+flask-cors>=4.0.0
