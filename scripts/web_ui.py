@@ -251,38 +251,99 @@ def index() -> Response:
     return send_from_directory(STATIC_DIR, "index.html")
 
 
+@APP.get("/api/health")
+def api_health() -> Response:
+    return jsonify({"ok": True, "service": "face-mvp", "version": 1})
+
+
 @APP.route("/api/upload", methods=["POST"])
 def api_upload() -> Response:
+    # Support two modes:
+    # 1) Whole-file mode: multiple image files per request (fields: files/images)
+    # 2) Chunk mode: single binary chunk (field: chunk) + meta(file_name, chunk_index, chunk_total)
     files = request.files.getlist("files") or request.files.getlist("images")
-    if not files:
+    chunk = request.files.get("chunk")
+    if not files and not chunk:
         return jsonify({"error": "no_files"}), 400
     topk = int(request.form.get("topk", 3))
     mcs = int(request.form.get("mcs", 5))
 
-    job_id = uuid.uuid4().hex
+    req_job = (request.form.get("job_id") or "").strip()
+    final_flag = (request.form.get("final") or "").lower() in {"1", "true", "yes", "y"}
+    started = False
+
+    if req_job:
+        job_id = req_job
+    else:
+        job_id = uuid.uuid4().hex
+
     in_dir = ensure_dir(DATA_IN / job_id)
     out_dir = ensure_dir(DATA_OUT / job_id)
 
     saved = 0
-    for f in files:
-        if not f.filename:
-            continue
-        fname = Path(f.filename).name
-        if not any(fname.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png"]):
-            continue
-        # Stream save to reduce memory footprint
+    received_info: Dict[str, Any] | None = None
+    if chunk is not None:
+        # Chunk mode
+        file_name = (request.form.get("file_name") or chunk.filename or "blob.bin").strip()
+        if not file_name:
+            file_name = "blob.bin"
+        idx = int((request.form.get("chunk_index") or 0))
+        total = int((request.form.get("chunk_total") or 1))
+        target = in_dir / Path(file_name).name
         try:
-            f.save(str(in_dir / fname))
+            if idx == 0 and target.exists():
+                target.unlink()
         except Exception:
-            # Fallback to reading into memory if save not supported
-            (in_dir / fname).write_bytes(f.read())
-        saved += 1
-    if saved == 0:
-        return jsonify({"error": "no_supported_files"}), 400
+            pass
+        target.parent.mkdir(parents=True, exist_ok=True)
+        # Append chunk to target file
+        try:
+            with open(target, "ab") as w:
+                chunk.save(w)
+        except Exception:
+            data = chunk.stream.read()
+            with open(target, "ab") as w:
+                w.write(data)
+        saved = 1
+        received_info = {"file_name": Path(file_name).name, "chunk_index": idx, "chunk_total": total}
+    else:
+        # Whole-file mode
+        for f in files:
+            if not f.filename:
+                continue
+            fname = Path(f.filename).name
+            if not any(fname.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png"]):
+                continue
+            try:
+                f.save(str(in_dir / fname))
+            except Exception:
+                (in_dir / fname).write_bytes(f.read())
+            saved += 1
+        if saved == 0:
+            return jsonify({"error": "no_supported_files"}), 400
 
-    t = Thread(target=_run_job, args=(job_id, in_dir, out_dir, topk, mcs), daemon=True)
-    t.start()
-    return jsonify({"job_id": job_id})
+    # Start policy:
+    # - If client provided job_id: start only when final=1
+    # - If job_id not provided: start immediately unless final=0 is explicitly given
+    if req_job:
+        if final_flag:
+            t = Thread(target=_run_job, args=(job_id, in_dir, out_dir, topk, mcs), daemon=True)
+            t.start()
+            started = True
+    else:
+        if not (request.form.get("final") or ""):  # backward compat: start on single-shot upload
+            t = Thread(target=_run_job, args=(job_id, in_dir, out_dir, topk, mcs), daemon=True)
+            t.start()
+            started = True
+        elif final_flag:
+            t = Thread(target=_run_job, args=(job_id, in_dir, out_dir, topk, mcs), daemon=True)
+            t.start()
+            started = True
+
+    resp = {"job_id": job_id, "started": started}
+    if received_info:
+        resp["received"] = received_info
+    return jsonify(resp)
 
 
 @APP.get("/api/progress")
