@@ -40,6 +40,24 @@ try:
 except Exception:
     pass
 
+# Allow large uploads (set via env MAX_UPLOAD_MB, default 512MB)
+try:
+    _max_mb = int(os.environ.get("MAX_UPLOAD_MB", "512"))
+except Exception:
+    _max_mb = 512
+APP.config["MAX_CONTENT_LENGTH"] = max(1, _max_mb) * 1024 * 1024  # bytes
+APP.config["MAX_FORM_MEMORY_SIZE"] = APP.config["MAX_CONTENT_LENGTH"]
+
+from werkzeug.exceptions import RequestEntityTooLarge  # noqa: E402
+
+@APP.errorhandler(RequestEntityTooLarge)
+def _too_large(e):
+    return jsonify({
+        "error": "too_large",
+        "message": "Upload too large",
+        "limit_mb": int(APP.config.get("MAX_CONTENT_LENGTH", 0) // (1024 * 1024)),
+    }), 413
+
 # In-memory job states (simple MVP)
 JOBS: Dict[str, Dict[str, Any]] = {}
 
@@ -252,7 +270,12 @@ def api_upload() -> Response:
         fname = Path(f.filename).name
         if not any(fname.lower().endswith(ext) for ext in [".jpg", ".jpeg", ".png"]):
             continue
-        (in_dir / fname).write_bytes(f.read())
+        # Stream save to reduce memory footprint
+        try:
+            f.save(str(in_dir / fname))
+        except Exception:
+            # Fallback to reading into memory if save not supported
+            (in_dir / fname).write_bytes(f.read())
         saved += 1
     if saved == 0:
         return jsonify({"error": "no_supported_files"}), 400

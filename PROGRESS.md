@@ -23,6 +23,7 @@
  - [x] 8-venv-run: 가상환경 설치 스크립트 및 Makefile 실행 타겟 추가
  - [x] 9-web-ui: 업로드/실행/결과 확인용 간단 HTML UI (Flask)
  - [x] 10-group-originals: 원본 사진을 클러스터별 폴더로 정리(person_XXX/noise/no_face) 및 리포트 하단 표시
+ - [x] 11-upload-limit: 대용량 업로드 지원(Flask MAX_CONTENT_LENGTH/스트리밍 저장)
 
 ## 변경 로그(Summary)
 
