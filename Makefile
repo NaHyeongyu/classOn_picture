@@ -18,7 +18,7 @@ preview:
 	. .venv/bin/activate && $(PY) scripts/preview_clusters.py --out $(OUT)
 
 clean:
-	rm -rf $(OUT)/faces $(OUT)/cache $(OUT)/clusters.json $(OUT)/report.html
+	rm -rf $(OUT)/faces $(OUT)/cache $(OUT)/clusters.json $(OUT)/report.html $(OUT)/grouped_photos
 
 web:
 	. .venv/bin/activate && $(PY) scripts/web_ui.py
