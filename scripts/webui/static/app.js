@@ -41,8 +41,6 @@ async function startUpload(files) {
   setBusy(true);
   updateProgress("업로드", 0.0);
   try {
-    const topk = Math.max(1, parseInt(el("optTopk").value || "3", 10));
-    const mcs = Math.max(2, parseInt(el("optMcs").value || "5", 10));
     const link = el("optLink").checked;
     const chunkMb = Math.max(0.25, parseFloat(el("optChunk").value || "1"));
     const CHUNK = Math.floor(chunkMb * 1024 * 1024);
@@ -69,8 +67,6 @@ async function startUpload(files) {
         if (localJobId) fd.append("job_id", localJobId);
         if (isLastOverall) {
           fd.append("final", "1");
-          fd.append("topk", String(topk));
-          fd.append("mcs", String(mcs));
           if (link) fd.append("link", "1");
         }
         const res = await fetch("/api/upload", { method: "POST", body: fd });
@@ -123,10 +119,19 @@ function startPolling(id) {
   }, 800);
 }
 
-async function loadResult(id) {
+async function loadResult(id, attempt = 0) {
   try {
-    updateProgress("결과 로딩", 1.0);
+    updateProgress("결과 준비 중", 1.0);
     const res = await fetch(`/api/result?job_id=${encodeURIComponent(id)}`, { cache: "no-store" });
+    if (res.status === 404) {
+      if (attempt < 20) { // 최대 약 16초 대기 (800ms × 20)
+        setTimeout(() => loadResult(id, attempt + 1), 800);
+        return;
+      }
+      notify("결과 준비 지연: 잠시 후 다시 시도하세요.", "error");
+      setBusy(false);
+      return;
+    }
     if (!res.ok) throw new Error(`결과 상태 ${res.status}`);
     const data = await res.json();
     renderClusters(data.clusters || []);

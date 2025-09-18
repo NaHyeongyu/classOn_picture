@@ -265,8 +265,9 @@ def api_upload() -> Response:
     chunk = request.files.get("chunk")
     if not files and not chunk:
         return jsonify({"error": "no_files"}), 400
-    topk = int(request.form.get("topk", 3))
-    mcs = int(request.form.get("mcs", 5))
+    # Fixed defaults (UI에서 항목 제거)
+    topk = 3
+    mcs = 5
     link_flag = (request.form.get("link") or "").lower() in {"1", "true", "yes", "y"}
 
     req_job = (request.form.get("job_id") or "").strip()
