@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
+import shutil
 
 
 def ensure_dir(path: str | Path) -> Path:
@@ -45,3 +46,23 @@ def write_json(path: str | Path, data: Any) -> None:
     with p.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
+
+def link_or_copy(src: str | Path, dst: str | Path, mode: str = "copy") -> None:
+    """
+    Create `dst` from `src` using:
+    - mode="symlink": try symlink, fallback to copy2
+    - mode="copy": always copy2
+    """
+    src_p, dst_p = Path(src), Path(dst)
+    dst_p.parent.mkdir(parents=True, exist_ok=True)
+    if mode == "symlink":
+        try:
+            if dst_p.exists() or dst_p.is_symlink():
+                return
+            os.symlink(src_p, dst_p)
+            return
+        except Exception:
+            pass
+    # default: copy
+    if not dst_p.exists():
+        shutil.copy2(src_p, dst_p)

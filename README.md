@@ -46,6 +46,7 @@ python scripts/preview_clusters.py --out data/output
     - `data/output/faces/*.jpg` 얼굴 썸네일
     - `data/output/clusters.json` 클러스터별 멤버/추천
     - `data/output/report.html` 부트스트랩 카드 그리드 리포트
+    - `data/output/grouped_photos/` 원본 사진을 클러스터별(person_XXX)/noise/no_face로 정리
 
 ## 디렉터리 구조
 
@@ -76,9 +77,11 @@ python scripts/preview_clusters.py --out data/output
 
 ## 실행 예시
 
- ```bash
- python scripts/run_pipeline.py --input data/input --out data/output --topk 3 --min-cluster-size 5
+```bash
+python scripts/run_pipeline.py --input data/input --out data/output --topk 3 --min-cluster-size 5
 python scripts/preview_clusters.py --out data/output
+ # 원본을 복사 대신 심볼릭 링크로 정리하려면
+ python scripts/run_pipeline.py --input data/input --out data/output --link-originals
 ```
 
 ### 웹 UI로 실행 (HTML 업로드/출력)

@@ -9,7 +9,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 from tqdm import tqdm
 
-from src.utils.fs import ensure_dir, iter_images, file_hash, write_json
+from src.utils.fs import ensure_dir, iter_images, file_hash, write_json, link_or_copy
 from src.utils.image import load_image, crop_with_margin
 from src.utils.logging import setup_logger
 from src.detectors.face_detector import InsightFaceDetector
@@ -62,6 +62,7 @@ def run_pipeline(
     output_dir: str,
     topk: int = 3,
     min_cluster_size: int = 5,
+    link_originals: bool = False,
 ) -> Dict:
     out_root = Path(output_dir)
     faces_dir = ensure_dir(out_root / "faces")
@@ -249,8 +250,61 @@ def run_pipeline(
     write_json(out_root / "clusters.json", out)
 
     # Render report
+    # Group original photos by cluster into grouped_photos/
+    grouped_root = ensure_dir(out_root / "grouped_photos")
+    cluster_to_photos: Dict[str, List[str]] = {}
+
+    # Map: cluster id -> set of photo_ids
+    cid_to_photo_ids: Dict[int, set] = defaultdict(set)
+    for f in faces:
+        cid_to_photo_ids[f.cluster_id].add(f.photo_id)
+
+    # Build photo lookup and helper to relative name
+    photos_by_id: Dict[int, Photo] = {p.id: p for p in photos}
+
+    # Positive clusters
+    for cid, photo_ids in cid_to_photo_ids.items():
+        if cid < 0:
+            continue
+        folder = ensure_dir(grouped_root / f"person_{cid:03d}")
+        rels: List[str] = []
+        for pid in sorted(photo_ids):
+            ph = photos_by_id[pid]
+            dst = folder / Path(ph.path).name
+            link_or_copy(ph.path, dst, mode="symlink" if link_originals else "copy")
+            rels.append(os.path.relpath(dst, start=out_root))
+        cluster_to_photos[str(cid)] = rels
+
+    # Noise faces
+    noise_ids = cid_to_photo_ids.get(-1, set())
+    noise_rels: List[str] = []
+    if noise_ids:
+        noise_dir = ensure_dir(grouped_root / "noise")
+        for pid in sorted(noise_ids):
+            ph = photos_by_id[pid]
+            dst = noise_dir / Path(ph.path).name
+            link_or_copy(ph.path, dst, mode="symlink" if link_originals else "copy")
+            noise_rels.append(os.path.relpath(dst, start=out_root))
+    cluster_to_photos["noise"] = noise_rels
+
+    # Photos with no detected faces
+    all_face_photo_ids = set(f.photo_id for f in faces)
+    noface_rels: List[str] = []
+    noface_dir = ensure_dir(grouped_root / "no_face")
+    for p in photos:
+        if p.id not in all_face_photo_ids:
+            dst = noface_dir / Path(p.path).name
+            link_or_copy(p.path, dst, mode="symlink" if link_originals else "copy")
+            noface_rels.append(os.path.relpath(dst, start=out_root))
+
+    out["grouping"] = {
+        "grouped_dir": os.path.relpath(grouped_root, start=out_root),
+        "clusters_to_photos": cluster_to_photos,
+        "no_face": noface_rels,
+    }
+
+    # Render report
     render_report(out_root, out)
 
     logger.info(f"Processed {len(photos)} photos, {len(faces)} faces → {len([c for c in clusters if c!=-1])} clusters.")
     return out
-

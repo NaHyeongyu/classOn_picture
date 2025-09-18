@@ -22,6 +22,7 @@
 - [ ] 7-demo: 테스트 데이터 & 데모(샘플 이미지 준비 및 e2e 검증)
  - [x] 8-venv-run: 가상환경 설치 스크립트 및 Makefile 실행 타겟 추가
  - [x] 9-web-ui: 업로드/실행/결과 확인용 간단 HTML UI (Flask)
+ - [x] 10-group-originals: 원본 사진을 클러스터별 폴더로 정리(person_XXX/noise/no_face) 및 리포트 하단 표시
 
 ## 변경 로그(Summary)
 
@@ -31,3 +32,4 @@
 - PENDING: 샘플 데이터 10~30장 추가 및 경계 사례 로그 수집(7-demo)
  - DONE: venv/실행 자동화 (`scripts/setup_venv.sh`, `Makefile`의 `setup/run/preview`)
  - DONE: 웹 UI (`scripts/web_ui.py`, 업로드→파이프라인 실행→리포트 뷰)
+ - DONE: 원본 그룹화(`grouped_photos/` 생성) 및 리포트 섹션(분리되지 않은 항목 포함)
