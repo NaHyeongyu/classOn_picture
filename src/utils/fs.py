@@ -15,11 +15,17 @@ def ensure_dir(path: str | Path) -> Path:
 
 
 def iter_images(root: str | Path, exts: Iterable[str] = (".jpg", ".jpeg", ".png")) -> List[Path]:
+    """Recursively list images under root with case-insensitive extension match."""
     root_p = Path(root)
+    exts_l = {e.lower() for e in exts}
     files: List[Path] = []
-    for ext in exts:
-        files.extend(sorted(root_p.rglob(f"*{ext}")))
-    return files
+    for p in root_p.rglob("*"):
+        try:
+            if p.is_file() and p.suffix.lower() in exts_l:
+                files.append(p)
+        except Exception:
+            continue
+    return sorted(files)
 
 
 def file_hash(path: str | Path) -> str:

@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Dict, List, Any
 import uuid
 import json
+import shutil
 from threading import Thread
 
-from flask import Flask, Response, flash, redirect, render_template_string, request, send_from_directory, url_for, jsonify
+from flask import Flask, Response, flash, redirect, render_template_string, request, send_from_directory, url_for, jsonify, send_file
 
 # Ensure src is importable
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -23,10 +24,20 @@ from src.utils.logging import setup_logger  # noqa: E402
 
 logger = setup_logger()
 
+# Paths: support PyInstaller (frozen) bundle
 BASE_DIR = Path(__file__).resolve().parent.parent
-STATIC_DIR = BASE_DIR / "scripts" / "webui" / "static"
-DATA_IN = BASE_DIR / "data" / "input"
-DATA_OUT = BASE_DIR / "data" / "output"
+IS_FROZEN = getattr(sys, "frozen", False)
+if IS_FROZEN:
+    # Static assets are embedded via --add-data into _MEIPASS/webui/static
+    MEIPASS = Path(getattr(sys, "_MEIPASS", BASE_DIR))
+    STATIC_DIR = MEIPASS / "webui" / "static"
+    DATA_ROOT = Path.cwd() / "data"  # keep writable next to the executable
+else:
+    STATIC_DIR = BASE_DIR / "scripts" / "webui" / "static"
+    DATA_ROOT = BASE_DIR / "data"
+
+DATA_IN = DATA_ROOT / "input"
+DATA_OUT = DATA_ROOT / "output"
 
 # Serve SPA static files at root path
 APP = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/")
@@ -256,6 +267,44 @@ def api_health() -> Response:
     return jsonify({"ok": True, "service": "face-mvp", "version": 1})
 
 
+@APP.post("/api/purge-all")
+def api_purge_all() -> Response:
+    """
+    Danger: Remove all contents under data/input and data/output to free space.
+    Keeps the directories themselves. Returns simple stats.
+    """
+    def _purge(root: Path) -> Dict[str, int]:
+        files = 0
+        dirs = 0
+        errs = 0
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        for p in list(root.iterdir()) if root.exists() else []:
+            try:
+                if p.is_symlink() or p.is_file():
+                    try:
+                        p.unlink()
+                    except FileNotFoundError:
+                        pass
+                    files += 1
+                elif p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+                    dirs += 1
+            except Exception:
+                errs += 1
+        return {"files": files, "dirs": dirs, "errors": errs}
+
+    in_stats = _purge(DATA_IN)
+    out_stats = _purge(DATA_OUT)
+    try:
+        JOBS.clear()
+    except Exception:
+        pass
+    return jsonify({"ok": True, "input": in_stats, "output": out_stats})
+
+
 @APP.route("/api/upload", methods=["POST"])
 def api_upload() -> Response:
     # Support two modes:
@@ -289,6 +338,10 @@ def api_upload() -> Response:
         file_name = (request.form.get("file_name") or chunk.filename or "blob.bin").strip()
         if not file_name:
             file_name = "blob.bin"
+        # basic extension allowlist for chunked uploads (match whole-file mode)
+        _ext = Path(file_name).suffix.lower()
+        if _ext not in {".jpg", ".jpeg", ".png"}:
+            return jsonify({"error": "unsupported_ext", "message": "Only .jpg/.jpeg/.png allowed"}), 400
         idx = int((request.form.get("chunk_index") or 0))
         total = int((request.form.get("chunk_total") or 1))
         target = in_dir / Path(file_name).name
@@ -394,6 +447,8 @@ def api_result() -> Response:
 
     grouping = data.get("grouping", {})
     clusters_map: Dict[str, List[str]] = grouping.get("clusters_to_photos", {})
+    labels_map: Dict[str, str] = grouping.get("labels", {}) or {}
+    hidden_set = {str(h) for h in (grouping.get("hidden_clusters") or [])}
     numeric_ids = sorted([int(k) for k in clusters_map.keys() if str(k).isdigit()])
     clusters_out: List[Dict[str, Any]] = []
     def _mk_item(p: str) -> Dict[str, str]:
@@ -412,13 +467,24 @@ def api_result() -> Response:
         base_url = f"/out/{job_id}/{p}"
         return {"photo": base_url, "thumb": prev_url, "preview": prev_url}
 
-    for idx, cid in enumerate(numeric_ids, start=1):
-        rels = clusters_map.get(str(cid), [])
+    person_idx = 0
+    for cid in numeric_ids:
+        key = str(cid)
+        if key in hidden_set:
+            continue
+        rels = clusters_map.get(key, [])
+        person_idx += 1
         originals = [_mk_item(p) for p in rels]
+        default_label = f"인물 {person_idx}"
+        custom_label = labels_map.get(key, "")
         clusters_out.append({
             "cluster_id": cid,
-            "name": f"인물 {idx}",
+            "name": custom_label or default_label,
+            "default_name": default_label,
+            "custom_name": custom_label,
             "originals": originals,
+            "is_noise": False,
+            "count": len(rels),
         })
 
     noise = clusters_map.get("noise", [])
@@ -459,20 +525,118 @@ def api_delete() -> Response:
     data = _json.loads(cfg.read_text(encoding="utf-8"))
     grouping = data.get("grouping") or {}
     ctps = grouping.get("clusters_to_photos") or {}
-    changed = False
+    labels = grouping.get("labels") or {}
+    hidden_list = grouping.get("hidden_clusters") or []
+    hidden_norm: List[int] = []
+    for item in hidden_list:
+        try:
+            hidden_norm.append(int(item))
+        except Exception:
+            continue
+    grouping_changed = False
+    data_changed = False
+    emptied: List[int] = []
     # Remove from any cluster lists
     for k, lst in list(ctps.items()):
         if rel in lst:
             lst2 = [x for x in lst if x != rel]
-            ctps[k] = lst2
-            changed = True
+            if lst2:
+                ctps[k] = lst2
+            else:
+                ctps.pop(k, None)
+                if str(k).isdigit():
+                    cid_val = int(k)
+                    emptied.append(cid_val)
+                    labels.pop(str(cid_val), None)
+            grouping_changed = True
     grouping["clusters_to_photos"] = ctps
     # Remove from no_face
     nf = grouping.get("no_face") or []
     if rel in nf:
         grouping["no_face"] = [x for x in nf if x != rel]
-        changed = True
-    if changed:
+        grouping_changed = True
+    if emptied:
+        for cid_val in emptied:
+            if cid_val not in hidden_norm:
+                hidden_norm.append(cid_val)
+        grouping["hidden_clusters"] = hidden_norm
+    grouping["labels"] = labels
+    # Remove photo metadata/original if identifiable
+    photo_id = None
+    try:
+        rel_name = Path(rel).name
+        prefix = rel_name.split("_", 1)[0]
+        if prefix.isdigit():
+            photo_id = int(prefix)
+    except Exception:
+        photo_id = None
+
+    removed_face_ids: set[int] = set()
+    if photo_id is not None:
+        photos = data.get("photos", [])
+        photo_entry = None
+        for p in photos:
+            if int(p.get("id")) == photo_id:
+                photo_entry = p
+                break
+        if photo_entry:
+            # Delete original file
+            orig_rel = photo_entry.get("path")
+            if isinstance(orig_rel, str):
+                try:
+                    orig_abs = (base / orig_rel).resolve()
+                    if orig_abs.exists() and orig_abs.is_file():
+                        orig_abs.unlink()
+                except Exception:
+                    pass
+            data["photos"] = [p for p in photos if int(p.get("id")) != photo_id]
+            data_changed = True
+            # Remove faces referencing this photo
+            faces = data.get("faces", [])
+            removed_face_ids = {int(f.get("id")) for f in faces if int(f.get("photo_id", -1)) == photo_id}
+            if removed_face_ids:
+                data["faces"] = [f for f in faces if int(f.get("photo_id", -1)) != photo_id]
+                data_changed = True
+            # Update clusters to drop removed faces
+            if removed_face_ids:
+                new_clusters = []
+                for c in data.get("clusters", []):
+                    member_ids = c.get("member_face_ids", []) or []
+                    filtered_members = [int(fid) for fid in member_ids if int(fid) not in removed_face_ids]
+                    if len(filtered_members) != len(member_ids):
+                        c["member_face_ids"] = filtered_members
+                        c["size"] = len(filtered_members)
+                        c["top"] = [t for t in c.get("top", []) if int(t.get("face_id", -1)) not in removed_face_ids]
+                        data_changed = True
+                        if c.get("cluster_id") is not None and not c.get("is_noise", False) and c["size"] == 0:
+                            cid_val = int(c["cluster_id"])
+                            if cid_val not in emptied:
+                                emptied.append(cid_val)
+                                labels.pop(str(cid_val), None)
+                    new_clusters.append(c)
+                data["clusters"] = new_clusters
+
+    if emptied:
+        # ensure hidden list updated after potential new empties
+        hidden_norm = list({*hidden_norm, *emptied})
+        grouping["hidden_clusters"] = hidden_norm
+        grouping_changed = True
+        # Drop empty clusters payload records
+        clusters_list = data.get("clusters", [])
+        kept_clusters = []
+        for c in clusters_list:
+            try:
+                cid_val = int(c.get("cluster_id"))
+            except Exception:
+                cid_val = None
+            if cid_val is not None and cid_val in emptied:
+                data_changed = True
+                continue
+            kept_clusters.append(c)
+        if len(kept_clusters) != len(clusters_list):
+            data["clusters"] = kept_clusters
+
+    if grouping_changed or data_changed:
         data["grouping"] = grouping
         cfg.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
     # Delete physical file (best effort)
@@ -481,7 +645,357 @@ def api_delete() -> Response:
             target.unlink()
     except Exception:
         pass
+
+    # Remove associated preview (best effort)
+    try:
+        rel_path = Path(rel)
+        if rel_path.parts and rel_path.parts[0] == "grouped_photos":
+            tail = Path(*rel_path.parts[1:])
+            prev_rel = Path("previews") / tail
+            prev_rel = prev_rel.with_suffix('.webp')
+            preview_target = (base / prev_rel).resolve()
+            if str(preview_target).startswith(str(base.resolve())):
+                if preview_target.exists() or preview_target.is_symlink():
+                    preview_target.unlink()
+    except Exception:
+        pass
+
+    # Remove cluster directories when emptied
+    for cid_val in emptied:
+        try:
+            cluster_dir = base / "grouped_photos" / f"person_{cid_val:03d}"
+            if cluster_dir.exists():
+                shutil.rmtree(cluster_dir)
+        except Exception:
+            pass
+        try:
+            preview_dir = base / "previews" / f"person_{cid_val:03d}"
+            if preview_dir.exists():
+                shutil.rmtree(preview_dir)
+        except Exception:
+            pass
     return jsonify({"ok": True, "removed": rel})
+
+
+@APP.post("/api/cluster/rename")
+def api_cluster_rename() -> Response:
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        payload = {}
+    job_id = (payload.get("job_id") or "").strip()
+    name_raw = (payload.get("name") or "").strip()
+    cid = payload.get("cid")
+    if not job_id or cid is None:
+        return jsonify({"error": "missing_params"}), 400
+    try:
+        cid = int(cid)
+    except Exception:
+        return jsonify({"error": "invalid_cid"}), 400
+    if cid < 0:
+        return jsonify({"error": "unsupported_cid"}), 400
+
+    cfg = DATA_OUT / job_id / "clusters.json"
+    if not cfg.exists():
+        return jsonify({"error": "not_found"}), 404
+    import json as _json
+    data = _json.loads(cfg.read_text(encoding="utf-8"))
+    grouping = data.get("grouping") or {}
+    labels = grouping.get("labels") or {}
+
+    label = name_raw[:80] if name_raw else ""
+    key = str(cid)
+    if label:
+        labels[key] = label
+    else:
+        labels.pop(key, None)
+
+    grouping["labels"] = labels
+    data["grouping"] = grouping
+    cfg.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return jsonify({"ok": True, "cid": cid, "name": label})
+
+
+@APP.post("/api/cluster/delete")
+def api_cluster_delete() -> Response:
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        payload = {}
+    job_id = (payload.get("job_id") or "").strip()
+    cid = payload.get("cid")
+    if not job_id or cid is None:
+        return jsonify({"error": "missing_params"}), 400
+    try:
+        cid = int(cid)
+    except Exception:
+        return jsonify({"error": "invalid_cid"}), 400
+    if cid < 0:
+        return jsonify({"error": "unsupported_cid"}), 400
+
+    cfg = DATA_OUT / job_id / "clusters.json"
+    if not cfg.exists():
+        return jsonify({"error": "not_found"}), 404
+
+    def _preview_rel(rel: str) -> Path:
+        p = Path(rel)
+        if p.parts and p.parts[0] == "grouped_photos":
+            tail = Path(*p.parts[1:])
+            base = Path("previews") / tail
+        else:
+            base = Path("previews") / p
+        return base.with_suffix('.webp')
+
+    import json as _json
+    data = _json.loads(cfg.read_text(encoding="utf-8"))
+    grouping = data.get("grouping") or {}
+    ctps: Dict[str, List[str]] = grouping.get("clusters_to_photos") or {}
+    labels = grouping.get("labels") or {}
+    hidden_list = grouping.get("hidden_clusters") or []
+
+    key = str(cid)
+    rels = ctps.pop(key, [])
+    grouping["clusters_to_photos"] = ctps
+    labels.pop(key, None)
+    grouping["labels"] = labels
+
+    hidden_norm: List[int] = []
+    for item in hidden_list:
+        try:
+            hidden_norm.append(int(item))
+        except Exception:
+            continue
+    if cid not in hidden_norm:
+        hidden_norm.append(cid)
+    grouping["hidden_clusters"] = hidden_norm
+
+    base = DATA_OUT / job_id
+    # Delete files that belonged to the cluster
+    removed = 0
+    for rel in rels:
+        target = (base / rel).resolve()
+        if str(target).startswith(str(base.resolve())):
+            try:
+                if target.exists() or target.is_symlink():
+                    target.unlink()
+                    removed += 1
+            except Exception:
+                pass
+        try:
+            prev_rel = _preview_rel(rel)
+            prev_abs = (base / prev_rel).resolve()
+            if str(prev_abs).startswith(str(base.resolve())) and (prev_abs.exists() or prev_abs.is_symlink()):
+                prev_abs.unlink()
+        except Exception:
+            pass
+
+    # Remove cluster directories (best effort)
+    cluster_dir = base / "grouped_photos" / f"person_{cid:03d}"
+    preview_dir = base / "previews" / f"person_{cid:03d}"
+    for folder in (cluster_dir, preview_dir):
+        try:
+            if folder.exists():
+                shutil.rmtree(folder)
+        except Exception:
+            pass
+
+    data["grouping"] = grouping
+    cfg.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return jsonify({"ok": True, "cid": cid, "removed_files": removed})
+
+
+@APP.post("/api/assign")
+def api_assign() -> Response:
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        payload = {}
+    job_id = (payload.get("job_id") or "").strip()
+    rel = (payload.get("path") or "").strip()
+    target_cid = payload.get("target_cid")
+    if not job_id or not rel or target_cid is None:
+        return jsonify({"error": "missing_params"}), 400
+    try:
+        target_cid = int(target_cid)
+    except Exception:
+        return jsonify({"error": "invalid_cid"}), 400
+    base = DATA_OUT / job_id
+    cfg = base / "clusters.json"
+    if not cfg.exists():
+        return jsonify({"error": "not_found"}), 404
+    import json as _json
+    data = _json.loads(cfg.read_text(encoding="utf-8"))
+    grouping = data.get("grouping") or {}
+    ctps: Dict[str, List[str]] = grouping.get("clusters_to_photos") or {}
+
+    # Compute destination rel path under grouped_photos/person_{cid:03d}
+    src_rel = Path(rel)
+    if src_rel.parts and src_rel.parts[0] == "previews":
+        # convert preview path to grouped_photos
+        tail = Path(*src_rel.parts[1:])
+        src_rel = Path("grouped_photos") / tail
+        src_rel = src_rel.with_suffix("")  # drop .webp
+    if not (src_rel.parts and src_rel.parts[0] == "grouped_photos"):
+        return jsonify({"error": "invalid_path"}), 400
+
+    src_abs = (base / src_rel).resolve()
+    if not str(src_abs).startswith(str(base.resolve())):
+        return jsonify({"error": "invalid_path"}), 400
+    if not src_abs.exists():
+        return jsonify({"error": "missing_file"}), 404
+
+    dst_rel = Path("grouped_photos") / (f"person_{target_cid:03d}") / src_abs.name
+    dst_abs = (base / dst_rel).resolve()
+    dst_abs.parent.mkdir(parents=True, exist_ok=True)
+
+    # Remove from any existing entries
+    changed = False
+    for k, lst in list(ctps.items()):
+        if str(src_rel) in lst:
+            ctps[k] = [x for x in lst if x != str(src_rel)]
+            changed = True
+    nf = grouping.get("no_face") or []
+    if str(src_rel) in nf:
+        grouping["no_face"] = [x for x in nf if x != str(src_rel)]
+        changed = True
+    # Also noise bucket
+    noise_list = ctps.get("noise") or []
+    if str(src_rel) in noise_list:
+        ctps["noise"] = [x for x in noise_list if x != str(src_rel)]
+        changed = True
+
+    # Physically move file
+    try:
+        if dst_abs.exists():
+            dst_abs.unlink()
+        src_abs.replace(dst_abs)
+    except Exception:
+        # fallback: copy then remove
+        try:
+            import shutil
+            shutil.copy2(src_abs, dst_abs)
+            src_abs.unlink(missing_ok=True)  # type: ignore
+        except Exception:
+            pass
+
+    # Add to target cluster list
+    key = str(target_cid)
+    lst = ctps.get(key) or []
+    if str(dst_rel) not in lst:
+        lst.append(str(dst_rel))
+    ctps[key] = lst
+    grouping["clusters_to_photos"] = ctps
+
+    hidden_list = grouping.get("hidden_clusters") or []
+    hidden_norm: List[int] = []
+    for item in hidden_list:
+        try:
+            hidden_norm.append(int(item))
+        except Exception:
+            continue
+    if target_cid in hidden_norm:
+        hidden_norm = [h for h in hidden_norm if h != target_cid]
+    grouping["hidden_clusters"] = hidden_norm
+
+    data["grouping"] = grouping
+    cfg.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return jsonify({"ok": True, "moved": {"from": str(src_rel), "to": str(dst_rel)}})
+
+
+@APP.post("/api/reorder")
+def api_reorder() -> Response:
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        payload = {}
+    job_id = (payload.get("job_id") or "").strip()
+    cid = payload.get("cid")
+    order = payload.get("order")
+    if not job_id or cid is None or not isinstance(order, list):
+        return jsonify({"error": "missing_params"}), 400
+    try:
+        cid = int(cid)
+    except Exception:
+        return jsonify({"error": "invalid_cid"}), 400
+    base = DATA_OUT / job_id
+    cfg = base / "clusters.json"
+    if not cfg.exists():
+        return jsonify({"error": "not_found"}), 404
+    import json as _json
+    data = _json.loads(cfg.read_text(encoding="utf-8"))
+    grouping = data.get("grouping") or {}
+    ctps: Dict[str, List[str]] = grouping.get("clusters_to_photos") or {}
+    key = str(cid)
+    # sanitize: keep only items that point under grouped_photos
+    clean = []
+    for rel in order:
+        try:
+            p = Path(rel)
+            if p.parts and p.parts[0] == "grouped_photos":
+                clean.append(str(p))
+        except Exception:
+            continue
+    ctps[key] = clean
+    grouping["clusters_to_photos"] = ctps
+    data["grouping"] = grouping
+    cfg.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return jsonify({"ok": True, "cid": cid, "count": len(clean)})
+
+
+@APP.post("/api/export")
+def api_export() -> Response:
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        payload = {}
+    job_id = (payload.get("job_id") or "").strip()
+    paths = payload.get("paths") or []
+    if not job_id or not isinstance(paths, list) or not paths:
+        return jsonify({"error": "missing_params"}), 400
+    base = DATA_OUT / job_id
+    from io import BytesIO
+    import zipfile
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        used = set()
+        for rel in paths:
+            try:
+                src = (base / rel).resolve()
+                # security: must be under base
+                if not str(src).startswith(str(base.resolve())):
+                    continue
+                if not src.exists():
+                    continue
+                # Compute arcname (cluster folder + filename)
+                arcname = rel
+                # Flatten previews path to original grouped_photos
+                if arcname.startswith("previews/"):
+                    arcname = "grouped_photos/" + arcname[len("previews/"):]
+                    arcname = os.path.splitext(arcname)[0]  # drop .webp
+                # If arcname duplicates, append index
+                name = arcname
+                i = 1
+                while name in used:
+                    stem, ext = os.path.splitext(arcname)
+                    name = f"{stem}_{i}{ext}"
+                    i += 1
+                used.add(name)
+                # Resolve symlink to actual file content
+                try:
+                    if src.is_symlink():
+                        real = Path(os.path.realpath(src))
+                    else:
+                        real = src
+                    zf.write(str(real), arcname=name)
+                except Exception:
+                    continue
+            except Exception:
+                continue
+    buf.seek(0)
+    ts = time.strftime("%Y%m%d-%H%M%S")
+    return Response(buf.read(), mimetype="application/zip", headers={
+        "Content-Disposition": f"attachment; filename=selected_{job_id}_{ts}.zip"
+    })
 
 
 def _save_status(sid: str, out_dir: Path, stage: str, percent: float, extra: Dict[str, Any] | None = None) -> None:
@@ -506,7 +1020,17 @@ def _run_job(sid: str, in_dir: Path, out_dir: Path, topk: int, mcs: int, link_or
 
     try:
         _save_status(sid, out_dir, "start", 0.0, {})
-        run_pipeline(str(in_dir), str(out_dir), topk=topk, min_cluster_size=mcs, progress_cb=cb, link_originals=link_originals)
+        # Adaptive min_cluster_size for small batches: make clusters appear with few photos
+        try:
+            num_imgs = sum(1 for p in in_dir.iterdir() if p.suffix.lower() in {'.jpg', '.jpeg', '.png'})
+        except Exception:
+            num_imgs = 0
+        mcs_eff = int(mcs)
+        if num_imgs <= 12:
+            mcs_eff = min(mcs_eff, 2)
+        elif num_imgs <= 30:
+            mcs_eff = min(mcs_eff, 3)
+        run_pipeline(str(in_dir), str(out_dir), topk=topk, min_cluster_size=mcs_eff, progress_cb=cb, link_originals=link_originals)
         _save_status(sid, out_dir, "done", 100.0, {})
     except Exception as e:
         _save_status(sid, out_dir, "error", 100.0, {"message": str(e)})
@@ -618,7 +1142,79 @@ def report(sid: str):
 @APP.route("/out/<sid>/<path:path>")
 def out_files(sid: str, path: str):
     out_dir = DATA_OUT / sid
-    return send_from_directory(out_dir, path, max_age=3600)
+    # Symlink-safe: only serve files that resolve under out_dir
+    try:
+        target = (out_dir / path).resolve()
+        base = out_dir.resolve()
+        if not str(target).startswith(str(base)):
+            return Response("forbidden", status=403)
+        if not target.exists() or target.is_dir():
+            return Response("not found", status=404)
+        # Serve the validated resolved file path
+        return send_file(str(target), max_age=3600)
+    except Exception:
+        return Response("error", status=500)
+
+
+@APP.post("/api/delete-originals")
+def api_delete_originals() -> Response:
+    """
+    Delete all original uploaded files for a session after materializing any
+    grouped_photos symlinks into real files to avoid broken references.
+    """
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+    except Exception:
+        payload = {}
+    job_id = (payload.get("job_id") or "").strip()
+    if not job_id:
+        return jsonify({"error": "missing_job_id"}), 400
+
+    out_dir = DATA_OUT / job_id
+    in_dir = DATA_IN / job_id
+    if not out_dir.exists():
+        return jsonify({"error": "not_found"}), 404
+
+    grouped = out_dir / "grouped_photos"
+    converted = 0
+    failed = 0
+    if grouped.exists():
+        for p in grouped.rglob("*"):
+            try:
+                if p.is_symlink():
+                    try:
+                        src_real = Path(os.path.realpath(p))
+                        # Replace symlink with a real file copy if source exists
+                        p.unlink(missing_ok=True)  # type: ignore[arg-type]
+                        if src_real.exists() and src_real.is_file():
+                            p.parent.mkdir(parents=True, exist_ok=True)
+                            shutil.copy2(src_real, p)
+                            converted += 1
+                        else:
+                            # Source missing; leave as removed
+                            failed += 1
+                    except Exception:
+                        failed += 1
+                        continue
+            except Exception:
+                # Some files may vanish during traversal; ignore
+                continue
+
+    removed = False
+    try:
+        if in_dir.exists():
+            shutil.rmtree(in_dir)
+            removed = True
+    except Exception:
+        pass
+
+    return jsonify({
+        "ok": True,
+        "job_id": job_id,
+        "converted_symlinks": converted,
+        "convert_failures": failed,
+        "deleted_input": removed,
+    })
 
 
 @APP.route("/sessions")
@@ -676,26 +1272,67 @@ def groups(sid: str):
     num_keys = [int(x) for x in clusters_to_photos.keys() if x.isdigit()]
     for k in sorted(num_keys):
         rels = clusters_to_photos.get(str(k), [])
-        thumbs = "".join(
-            f"<div class='col'><a href='{base}{p}' target='_blank'><img class='img-fluid rounded' src='{base}{p}'/></a></div>"
-            for p in rels[:12]
+        # Top thumbnails (first 12) with uniform sizing
+        top = rels[:12]
+        rest = rels[12:]
+        thumbs_top = "".join(
+            (
+                f"<a class='thumb-link' href='{base}{p}' target='_blank' title='인물 {k}'><img loading='lazy' alt='인물 {k}' src='{base}{p}'/></a>"
+            )
+            for p in top
         )
+        # Remaining thumbnails collapsed under details
+        if rest:
+            more_count = len(rest)
+            thumbs_rest = "".join(
+                (
+                    f"<a class='thumb-link' href='{base}{p}' target='_blank' title='인물 {k}'><img loading='lazy' alt='인물 {k}' src='{base}{p}'/></a>"
+                )
+                for p in rest
+            )
+            more_html = (
+                f"<details class='mt-2 small'>"
+                f"  <summary class='text-secondary'>더보기 (+{more_count})</summary>"
+                f"  <div class='thumb-grid mt-2'>{thumbs_rest}</div>"
+                f"</details>"
+            )
+        else:
+            more_html = ""
+
         _fallback = "<div class='text-muted'>이미지 없음</div>"
-        body_thumbs = thumbs if thumbs else _fallback
+        body_thumbs = thumbs_top if thumbs_top else _fallback
+
+        report_anchor = f"{url_for('report', sid=sid)}#cluster-{k}"
         persons.append(
-            f"<div class='col'><div class='card h-100'><div class='card-header'><strong>인물 {k}</strong> <span class='badge bg-light text-dark'>{len(rels)}</span></div>"
-            f"<div class='card-body'><div class='row row-cols-4 g-2'>{body_thumbs}</div></div></div></div>"
+            (
+                f"<div class='col'>"
+                f"  <div class='card h-100 person-card shadow-sm border-0'>"
+                f"    <div class='card-header bg-white d-flex justify-content-between align-items-center'>"
+                f"      <div><strong>인물 {k}</strong> <span class='badge bg-light text-dark'>{len(rels)}</span></div>"
+                f"      <a class='btn btn-sm btn-outline-primary' href='{report_anchor}' target='_blank'>리포트에서 보기</a>"
+                f"    </div>"
+                f"    <div class='card-body'>"
+                f"      <div class='thumb-grid'>{body_thumbs}</div>"
+                f"      {more_html}"
+                f"    </div>"
+                f"  </div>"
+                f"</div>"
+            )
         )
     persons_html = "".join(persons) or "<div class='text-muted'>클러스터가 없습니다.</div>"
 
     noise = clusters_to_photos.get("noise", [])
     no_face = grouping.get("no_face", [])
     noise_html = "".join(
-        f"<div class='col'><a href='{base}{p}' target='_blank'><img class='img-fluid rounded' src='{base}{p}'/></a></div>"
+        (
+            f"<a class='thumb-link' href='{base}{p}' target='_blank' title='Noise'><img loading='lazy' alt='Noise' src='{base}{p}'/></a>"
+        )
         for p in noise[:20]
     ) or "<div class='text-muted'>없음</div>"
     nf_html = "".join(
-        f"<div class='col'><a href='{base}{p}' target='_blank'><img class='img-fluid rounded' src='{base}{p}'/></a></div>"
+        (
+            f"<a class='thumb-link' href='{base}{p}' target='_blank' title='No Face'><img loading='lazy' alt='No Face' src='{base}{p}'/></a>"
+        )
         for p in no_face[:20]
     ) or "<div class='text-muted'>없음</div>"
 
@@ -704,6 +1341,13 @@ def groups(sid: str):
       <meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'>
       <link href='https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css' rel='stylesheet'>
       <title>원본 그룹 — {sid}</title>
+      <style>
+        .thumb-grid { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+        .thumb-grid img { width: 120px; height: 120px; object-fit: cover; border-radius: 0.5rem; box-shadow: 0 0.25rem 0.5rem rgba(0,0,0,0.05); }
+        .thumb-link { display: inline-flex; }
+        .person-card { transition: box-shadow .15s ease; }
+        .person-card:hover { box-shadow: 0 .5rem 1rem rgba(0,0,0,.1); }
+      </style>
     </head><body>
       <div class='container my-4'>
         <div class='d-flex justify-content-between align-items-center'>
@@ -720,9 +1364,9 @@ def groups(sid: str):
         <div class='my-4'>
           <h5 class='mb-2'>분리되지 않은 항목</h5>
           <div class='mb-1'><span class='badge bg-secondary'>Noise (얼굴은 있으나 미분류)</span></div>
-          <div class='row row-cols-4 g-2'>{noise_html}</div>
+          <div class='thumb-grid'>{noise_html}</div>
           <div class='mt-3 mb-1'><span class='badge bg-secondary'>No Face (얼굴 없음)</span></div>
-          <div class='row row-cols-4 g-2'>{nf_html}</div>
+          <div class='thumb-grid'>{nf_html}</div>
         </div>
       </div>
     </body></html>

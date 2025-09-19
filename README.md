@@ -93,6 +93,31 @@ make web  # http://127.0.0.1:8000 접속 → 이미지 업로드 → 실행
 - 파이프라인 실행 후 결과 리포트 바로 보기
 - 이전 세션 목록/JSON/썸네일 접근
 
+## Windows EXE 배포(원클릭 실행)
+
+GitHub에 이 저장소를 올리면, 자동으로 Windows용 실행 파일(.exe)을 빌드하고 아티팩트로 제공합니다.
+
+1) GitHub Actions 활성화
+- `.github/workflows/windows-exe.yml`가 포함되어 있습니다.
+- 저장소를 GitHub에 푸시하면 수동(workflow_dispatch) 또는 태그(vX.Y.Z)로 빌드가 실행됩니다.
+
+2) 아티팩트 다운로드
+- GitHub → Actions → build-windows-exe → Artifacts에서 `ClassOnFace-windows-exe` 다운로드
+- 압축 해제 후 `ClassOnFace.exe` 실행 → 브라우저에서 `http://127.0.0.1:8000/` 접속
+- 데이터 폴더는 실행 파일이 있는 경로 기준 `data/input`, `data/output`에 생성/사용됩니다.
+
+3) 로컬에서 직접 빌드(선택)
+```bat
+REM Windows PowerShell/CMD
+scripts\packaging\build_exe.bat
+```
+빌드 산출물: `dist\ClassOnFace.exe`
+
+참고
+- PyInstaller one-file 모드로 패키징됩니다. InsightFace/ONNX는 제외한 라이트 요구사항(`scripts/packaging/requirements-lite.txt`)으로 빌드하여 용량/의존성을 줄였습니다. 정확도가 더 필요하면 `requirements.txt`로 빌드해도 됩니다.
+- 방화벽 경고가 뜨면 로컬 네트워크 허용을 선택하세요.
+- 실행 중 파일은 현재 작업 폴더(`data/`)에 저장됩니다. 용량 관리를 위해 UI의 “이전 사진 삭제” 기능을 사용하세요.
+
 ## 참고/주석
  - InsightFace/ArcFace 임베딩(512D) 기반 얼굴 표현.
  - HDBSCAN으로 라벨 없는 동일인 군집화.

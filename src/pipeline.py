@@ -8,7 +8,7 @@ from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 from tqdm import tqdm
-from PIL import Image
+from PIL import Image, ImageOps
 
 from src.utils.fs import ensure_dir, iter_images, file_hash, write_json, link_or_copy
 from src.utils.image import load_image, crop_with_margin
@@ -173,6 +173,37 @@ def run_pipeline(
         pct = 10.0 + 60.0 * (processed / max(1, total))
         _progress("process_images", pct, {"processed": processed, "total": total})
 
+    def _target_name(photo: Photo) -> str:
+        src_name = Path(photo.path).name
+        return f"{photo.id:06d}_{src_name}"
+
+    def _preview_rel(rel: str) -> Path:
+        rel_path = Path(rel)
+        if rel_path.parts and rel_path.parts[0] == "grouped_photos":
+            tail = Path(*rel_path.parts[1:])
+            base = Path("previews") / tail
+        else:
+            base = Path("previews") / rel_path
+        return base.with_suffix('.webp')
+
+    def _make_preview(src_abs: Path, dst_abs: Path, max_side: int = 1200) -> None:
+        try:
+            dst_abs.parent.mkdir(parents=True, exist_ok=True)
+            with Image.open(str(src_abs)) as im:
+                try:
+                    im = ImageOps.exif_transpose(im)
+                except Exception:
+                    pass
+                im = im.convert("RGB")
+                w, h = im.size
+                scale = 1.0
+                if max(w, h) > max_side:
+                    scale = max_side / float(max(w, h))
+                    im = im.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
+                im.save(str(dst_abs), format="WEBP", quality=80, method=6)
+        except Exception:
+            pass
+
     if not embeddings:
         logger.warning("No faces detected with embeddings. Nothing to cluster.")
         photos_json = [
@@ -195,15 +226,32 @@ def run_pipeline(
         grouped_root = ensure_dir(out_root / "grouped_photos")
         noface_dir = ensure_dir(grouped_root / "no_face")
         noface_rels: List[str] = []
+        noface_set: set[str] = set()
         for p in photos:
-            dst = noface_dir / Path(p.path).name
+            dst = noface_dir / _target_name(p)
+            rel = os.path.relpath(dst, start=out_root)
+            if rel in noface_set:
+                continue
             link_or_copy(p.path, dst, mode="symlink" if link_originals else "copy")
-            noface_rels.append(os.path.relpath(dst, start=out_root))
+            noface_rels.append(rel)
+            noface_set.add(rel)
         out["grouping"] = {
             "grouped_dir": os.path.relpath(grouped_root, start=out_root),
             "clusters_to_photos": {},
             "no_face": noface_rels,
+            "labels": {},
+            "hidden_clusters": [],
         }
+        ensure_dir(out_root / "previews")
+        for rel in noface_rels:
+            try:
+                prev_rel = _preview_rel(rel)
+                src_abs = out_root / rel
+                dst_abs = out_root / prev_rel
+                if not dst_abs.exists():
+                    _make_preview(src_abs, dst_abs)
+            except Exception:
+                continue
         write_json(out_root / "clusters.json", out)
         render_report(out_root, out)
         return out
@@ -222,6 +270,12 @@ def run_pipeline(
         _progress("clustering_retry", 78.0, {"orig_mcs": min_cluster_size, "new_mcs": new_mcs})
         labels, model = cluster_embeddings(emb_arr, min_cluster_size=new_mcs, min_samples=1)
         logger.info(f"No clusters at mcs={min_cluster_size}; retried with mcs={new_mcs}, min_samples=1")
+        pos = [lab for lab in set(labels.tolist()) if lab != -1]
+        # Last resort: for very small batches, force a single cluster to avoid empty results
+        if len(pos) == 0 and emb_arr.shape[0] <= 12:
+            import numpy as _np
+            labels = _np.zeros_like(labels)
+            logger.info("Forced a single cluster for small batch (<=12 faces) to avoid all-noise result.")
     for f in faces:
         f.cluster_id = int(labels[f.embedding_idx])
 
@@ -322,72 +376,99 @@ def run_pipeline(
     grouped_root = ensure_dir(out_root / "grouped_photos")
     cluster_to_photos: Dict[str, List[str]] = {}
 
-    # Map: cluster id -> set of photo_ids
-    cid_to_photo_ids: Dict[int, set] = defaultdict(set)
-    for f in faces:
-        cid_to_photo_ids[f.cluster_id].add(f.photo_id)
-
     # Build photo lookup and helper to relative name
     photos_by_id: Dict[int, Photo] = {p.id: p for p in photos}
+    face_score_by_id: Dict[int, float] = {faces[i].id: float(final_scores[i]) for i in range(len(faces))}
+    faces_by_photo: Dict[int, List[FaceRec]] = defaultdict(list)
+    for f in faces:
+        faces_by_photo[f.photo_id].append(f)
+
+    # Assign each photo to a single representative cluster (largest face wins, ties -> higher score)
+    photo_assignments: Dict[int, int] = {}
+    for pid, face_list in faces_by_photo.items():
+        best_positive: Optional[Tuple[float, float, int]] = None
+        best_noise: Optional[Tuple[float, float, int]] = None
+        for f in face_list:
+            w = max(int(f.bbox[2]), 0)
+            h = max(int(f.bbox[3]), 0)
+            area = float(w * h)
+            score = face_score_by_id.get(f.id, 0.0)
+            candidate = (area, score, int(f.cluster_id))
+            if f.cluster_id >= 0:
+                if best_positive is None or (candidate[0], candidate[1]) > (best_positive[0], best_positive[1]):
+                    best_positive = candidate
+            else:
+                if best_noise is None or (candidate[0], candidate[1]) > (best_noise[0], best_noise[1]):
+                    best_noise = candidate
+        if best_positive is not None:
+            photo_assignments[pid] = best_positive[2]
+        elif best_noise is not None:
+            photo_assignments[pid] = -1
+
+    assigned_by_cluster: Dict[int, List[int]] = defaultdict(list)
+    for pid, cid in photo_assignments.items():
+        assigned_by_cluster[int(cid)].append(pid)
 
     # Positive clusters
-    for cid, photo_ids in cid_to_photo_ids.items():
-        if cid < 0:
-            continue
-        folder = ensure_dir(grouped_root / f"person_{cid:03d}")
+    for cid in sorted(c for c in clusters.keys() if c >= 0):
         rels: List[str] = []
-        for pid in sorted(photo_ids):
-            ph = photos_by_id[pid]
-            dst = folder / Path(ph.path).name
-            link_or_copy(ph.path, dst, mode="symlink" if link_originals else "copy")
-            rels.append(os.path.relpath(dst, start=out_root))
+        rels_set: set[str] = set()
+        photo_ids = sorted(set(assigned_by_cluster.get(cid, [])))
+        if photo_ids:
+            folder = ensure_dir(grouped_root / f"person_{cid:03d}")
+            for pid in photo_ids:
+                ph = photos_by_id[pid]
+                dst = folder / _target_name(ph)
+                rel = os.path.relpath(dst, start=out_root)
+                if rel in rels_set:
+                    continue
+                link_or_copy(ph.path, dst, mode="symlink" if link_originals else "copy")
+                rels.append(rel)
+                rels_set.add(rel)
         cluster_to_photos[str(cid)] = rels
 
     # Noise faces
-    noise_ids = cid_to_photo_ids.get(-1, set())
+    noise_ids = sorted(set(assigned_by_cluster.get(-1, [])))
     noise_rels: List[str] = []
     if noise_ids:
         noise_dir = ensure_dir(grouped_root / "noise")
-        for pid in sorted(noise_ids):
+        noise_set: set[str] = set()
+        for pid in noise_ids:
             ph = photos_by_id[pid]
-            dst = noise_dir / Path(ph.path).name
+            dst = noise_dir / _target_name(ph)
+            rel = os.path.relpath(dst, start=out_root)
+            if rel in noise_set:
+                continue
             link_or_copy(ph.path, dst, mode="symlink" if link_originals else "copy")
-            noise_rels.append(os.path.relpath(dst, start=out_root))
+            noise_rels.append(rel)
+            noise_set.add(rel)
     cluster_to_photos["noise"] = noise_rels
 
     # Photos with no detected faces
     all_face_photo_ids = set(f.photo_id for f in faces)
     noface_rels: List[str] = []
     noface_dir = ensure_dir(grouped_root / "no_face")
+    noface_set: set[str] = set()
     for p in photos:
         if p.id not in all_face_photo_ids:
-            dst = noface_dir / Path(p.path).name
+            dst = noface_dir / _target_name(p)
+            rel = os.path.relpath(dst, start=out_root)
+            if rel in noface_set:
+                continue
             link_or_copy(p.path, dst, mode="symlink" if link_originals else "copy")
-            noface_rels.append(os.path.relpath(dst, start=out_root))
+            noface_rels.append(rel)
+            noface_set.add(rel)
 
     out["grouping"] = {
         "grouped_dir": os.path.relpath(grouped_root, start=out_root),
         "clusters_to_photos": cluster_to_photos,
         "no_face": noface_rels,
+        "labels": {},
+        "hidden_clusters": [],
     }
 
     # Generate previews (WEBP) for grouped photos to speed up modal rendering
-    preview_root = ensure_dir(out_root / "previews")
-
-    def _make_preview(src_abs: Path, dst_abs: Path, max_side: int = 1200) -> None:
-        try:
-            dst_abs.parent.mkdir(parents=True, exist_ok=True)
-            with Image.open(str(src_abs)) as im:
-                im = im.convert("RGB")
-                w, h = im.size
-                scale = 1.0
-                if max(w, h) > max_side:
-                    scale = max_side / float(max(w, h))
-                    im = im.resize((int(w * scale), int(h * scale)), Image.LANCZOS)
-                im.save(str(dst_abs), format="WEBP", quality=80, method=6)
-        except Exception:
-            # Best-effort; ignore preview failure
-            pass
+    ensure_dir(out_root / "previews")
 
     # Build list of rel paths from grouping
     def _all_grouped_rels() -> List[str]:
@@ -400,23 +481,13 @@ def run_pipeline(
     for rel in _all_grouped_rels():
         # rel is relative to out_root, starts with grouped_photos/
         try:
-            rel_path = Path(rel)
-            if rel_path.parts and rel_path.parts[0] == "grouped_photos":
-                tail = Path(*rel_path.parts[1:])
-                prev_rel = Path("previews") / tail
-            else:
-                # Fallback mirror structure
-                prev_rel = Path("previews") / rel_path
-            prev_rel = prev_rel.with_suffix('.webp')
+            prev_rel = _preview_rel(rel)
             src_abs = out_root / rel
             dst_abs = out_root / prev_rel
             if not dst_abs.exists():
                 _make_preview(src_abs, dst_abs)
         except Exception:
             pass
-
-    # Persist final JSON including grouping for API consumers
-    write_json(out_root / "clusters.json", out)
 
     # Persist final JSON including grouping for API consumers
     write_json(out_root / "clusters.json", out)
