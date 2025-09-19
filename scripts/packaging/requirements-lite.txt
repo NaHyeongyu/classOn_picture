@@ -1,12 +1,10 @@
 opencv-python>=4.8.0
 numpy>=1.24.0
 scikit-learn>=1.3.0
-hdbscan>=0.8.33
 scikit-image>=0.22.0
 matplotlib>=3.7.2
 pandas>=2.0.3
 tqdm>=4.66.1
 Pillow>=9.5.0
-pybrisque>=1.0
 Flask>=3.0.0
 flask-cors>=4.0.0

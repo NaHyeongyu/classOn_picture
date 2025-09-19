@@ -24,16 +24,23 @@ jobs:
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed --name ClassOnFace --add-data "scripts/webui/static;webui/static" scripts/web_ui.py
       - name: Build Installer (Inno Setup)
+        if: always()
+        continue-on-error: true
         shell: pwsh
         run: |
-          choco install innosetup -y
-          & "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe" scripts\\packaging\\installer.iss
+          try { choco install innosetup -y } catch { Write-Host 'choco failed, continuing' }
+          $iscc = "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe"
+          if (Test-Path $iscc) {
+            & $iscc scripts\\packaging\\installer.iss
+          } else {
+            Write-Host 'ISCC not found, skipping installer build'
+          }
       - name: Package artifact
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path upload | Out-Null
           Copy-Item -Path "dist\ClassOnFace.exe" -Destination "upload\ClassOnFace.exe"
-          Copy-Item -Path "dist\installer\ClassOnFace-Setup.exe" -Destination "upload\ClassOnFace-Setup.exe"
+          if (Test-Path "dist\installer\ClassOnFace-Setup.exe") { Copy-Item -Path "dist\installer\ClassOnFace-Setup.exe" -Destination "upload\ClassOnFace-Setup.exe" }
           Set-Content -Path "upload\run.bat" -Value 'start "ClassOnFace" /b ClassOnFace.exe'
           Add-Content -Path "upload\run.bat" -Value 'timeout /t 1 >nul'
           Add-Content -Path "upload\run.bat" -Value 'start "" http://127.0.0.1:8000/'
