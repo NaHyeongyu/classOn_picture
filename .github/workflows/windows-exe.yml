@@ -21,18 +21,14 @@ jobs:
           pip install -r scripts/packaging/requirements-lite.txt pyinstaller
       - name: Build EXE with PyInstaller
         run: |
-          pyinstaller --noconfirm --clean ^
-            --onefile --windowed ^
-            --name ClassOnFace ^
-            --add-data "scripts/webui/static;webui/static" ^
-            scripts/web_ui.py
+          pyinstaller --noconfirm --clean --onefile --windowed --name ClassOnFace --add-data "scripts/webui/static;webui/static" scripts/web_ui.py
       - name: Package artifact
+        shell: pwsh
         run: |
-          mkdir upload
-          copy dist\ClassOnFace.exe upload\ClassOnFace.exe
-          rem Include a simple run script and README
-          echo start "ClassOnFace" /b ClassOnFace.exe > upload\run.bat
-          echo Open http://127.0.0.1:8000/ in your browser. >> upload\README.txt
+          New-Item -ItemType Directory -Force -Path upload | Out-Null
+          Copy-Item -Path "dist\ClassOnFace.exe" -Destination "upload\ClassOnFace.exe"
+          Set-Content -Path "upload\run.bat" -Value 'start "ClassOnFace" /b ClassOnFace.exe'
+          Set-Content -Path "upload\README.txt" -Value 'Open http://127.0.0.1:8000/ in your browser.'
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
