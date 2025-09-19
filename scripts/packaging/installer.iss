@@ -13,7 +13,8 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableDirPage=no
 DisableProgramGroupPage=yes
-OutputDir=dist\installer
+; Put installer under repo root dist\installer (robust to working dir)
+OutputDir={#SourcePath}\..\..\dist\installer
 OutputBaseFilename={#MyAppName}-Setup
 Compression=lzma
 SolidCompression=yes
@@ -26,7 +27,8 @@ Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Files]
-Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+; PyInstaller output lives at repo root dist\
+Source: "{#SourcePath}\..\..\dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -37,4 +39,3 @@ Name: "desktopicon"; Description: "바탕화면에 바로가기 생성"; Flags: 
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{#MyAppName} 실행"; Flags: nowait postinstall skipifsilent
-
