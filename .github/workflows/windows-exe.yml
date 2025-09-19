@@ -3,6 +3,7 @@ name: build-windows-exe
 on:
   workflow_dispatch:
   push:
+    branches: [ main ]
     tags:
       - 'v*.*.*'
 
@@ -22,20 +23,28 @@ jobs:
       - name: Build EXE with PyInstaller
         run: |
           pyinstaller --noconfirm --clean --onefile --windowed --name ClassOnFace --add-data "scripts/webui/static;webui/static" scripts/web_ui.py
+      - name: Build Installer (Inno Setup)
+        shell: pwsh
+        run: |
+          choco install innosetup -y
+          & "C:\\Program Files (x86)\\Inno Setup 6\\ISCC.exe" scripts\\packaging\\installer.iss
       - name: Package artifact
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path upload | Out-Null
           Copy-Item -Path "dist\ClassOnFace.exe" -Destination "upload\ClassOnFace.exe"
+          Copy-Item -Path "dist\installer\ClassOnFace-Setup.exe" -Destination "upload\ClassOnFace-Setup.exe"
           Set-Content -Path "upload\run.bat" -Value 'start "ClassOnFace" /b ClassOnFace.exe'
-          Set-Content -Path "upload\README.txt" -Value 'Open http://127.0.0.1:8000/ in your browser.'
+          Add-Content -Path "upload\run.bat" -Value 'timeout /t 1 >nul'
+          Add-Content -Path "upload\run.bat" -Value 'start "" http://127.0.0.1:8000/'
+          Set-Content -Path "upload\README.txt" -Value "1) ClassOnFace-Setup.exe 실행(권장) 또는 ClassOnFace.exe 실행`r`n2) 브라우저에서 http://127.0.0.1:8000/ 자동 오픈 또는 직접 접속"
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ClassOnFace-windows-exe
           path: upload
 
-  release:
+  release_tag:
     if: startsWith(github.ref, 'refs/tags/v')
     needs: build
     runs-on: ubuntu-latest
@@ -48,9 +57,33 @@ jobs:
         run: |
           cd upload
           zip -r ClassOnFace-windows.zip .
-      - name: Release
+      - name: Release (tag)
         uses: softprops/action-gh-release@v2
         with:
+          files: upload/ClassOnFace-windows.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  release_latest:
+    if: github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ClassOnFace-windows-exe
+          path: upload
+      - name: Create Zip
+        run: |
+          cd upload
+          zip -r ClassOnFace-windows.zip .
+      - name: Release (latest pre-release)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest (auto)
+          prerelease: true
+          draft: false
           files: upload/ClassOnFace-windows.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
