@@ -113,6 +113,14 @@ scripts\packaging\build_exe.bat
 ```
 빌드 산출물: `dist\ClassOnFace.exe`
 
+### 전체 자동화 스크립트 (윈도우)
+```powershell
+# 관리자 PowerShell 권장
+Set-Location <repository-root>
+.\scripts\packaging\auto_build.ps1
+```
+동작 순서: Python 미설치 시 winget으로 자동 설치 → `.venv` 생성 → 의존성/pyinstaller 설치 → `dist\ClassOnFace.exe` 빌드. winget이 없거나 설치 권한이 없다면 Python을 수동 설치한 뒤 다시 실행하면 나머지 단계가 그대로 이어집니다.
+
 참고
 - PyInstaller one-file 모드로 패키징됩니다. InsightFace/ONNX는 제외한 라이트 요구사항(`scripts/packaging/requirements-lite.txt`)으로 빌드하여 용량/의존성을 줄였습니다. 정확도가 더 필요하면 `requirements.txt`로 빌드해도 됩니다.
 - 방화벽 경고가 뜨면 로컬 네트워크 허용을 선택하세요.
