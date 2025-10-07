@@ -1,6 +1,7 @@
 param(
     [string]$PythonWingetId = "Python.Python.3.11",
-    [switch]$ForceWinget
+    [switch]$ForceWinget,
+    [switch]$Lite
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,7 +53,9 @@ $repoRoot = Resolve-Path (Join-Path $scriptDir "..\..")
 $venvDir = Join-Path $repoRoot ".venv"
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
 $requirementsLite = Join-Path $scriptDir "requirements-lite.txt"
+$requirementsFull = Join-Path $repoRoot "requirements.txt"
 $distExe = Join-Path $repoRoot "dist\ClassOnFace.exe"
+$modelCache = Join-Path $env:USERPROFILE ".insightface"
 
 Push-Location $repoRoot
 try {
@@ -72,8 +75,13 @@ try {
     Write-Host "Upgrading pip inside virtual environment"
     & $venvPython -m pip install --upgrade pip
 
-    Write-Host "Installing packaging requirements"
-    & $venvPython -m pip install -r $requirementsLite pyinstaller
+    $requirementsToUse = $requirementsFull
+    if ($Lite.IsPresent) {
+        $requirementsToUse = $requirementsLite
+    }
+
+    Write-Host "Installing packaging requirements from $(Split-Path $requirementsToUse -Leaf)"
+    & $venvPython -m pip install -r $requirementsToUse pyinstaller
 
     $pyinstallerExe = Join-Path $venvDir "Scripts\pyinstaller.exe"
     if (-not (Test-Path $pyinstallerExe)) {
@@ -81,15 +89,25 @@ try {
     }
 
     Write-Host "Building Windows executable via PyInstaller"
+    $staticDir = Join-Path $repoRoot "scripts\webui\static"
     $pyArgs = @(
         "--noconfirm",
         "--clean",
         "--onefile",
         "--windowed",
         "--name", "ClassOnFace",
-        "--add-data", "scripts/webui/static;webui/static",
-        "scripts/web_ui.py"
+        "--add-data", "$staticDir;webui/static"
     )
+
+    if (Test-Path $modelCache) {
+        Write-Host "Bundling InsightFace cache from $modelCache"
+        $pyArgs += "--add-data"
+        $pyArgs += "$modelCache;.insightface"
+    } else {
+        Write-Warning "InsightFace 캐시($modelCache) 없음. 최초 실행 시 모델을 다시 다운로드합니다."
+    }
+
+    $pyArgs += "scripts/web_ui.py"
     & $pyinstallerExe @pyArgs
 
     if (Test-Path $distExe) {
