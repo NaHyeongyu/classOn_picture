@@ -19,6 +19,15 @@ set "PYINSTALLER_ARGS=--noconfirm --clean --onefile --windowed --name ClassOnFac
 set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --add-data "%STATIC_DIR%;webui/static""
 set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --add-data "%SRC_DIR%;src""
 set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --collect-all src"
+set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --collect-all numpy"
+set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --collect-all sklearn"
+set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --collect-all skimage"
+set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --collect-all matplotlib"
+set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --collect-all pandas"
+set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --collect-all hdbscan"
+set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --collect-all onnxruntime"
+set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --collect-all insightface"
+set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --collect-all cv2"
 
 if exist "%MODEL_CACHE%" (
   echo Bundling InsightFace cache from "%MODEL_CACHE%"

@@ -122,6 +122,11 @@ if not cache.exists():
         "--collect-all", "src"
     )
 
+    foreach ($pkg in @("numpy", "sklearn", "skimage", "matplotlib", "pandas", "hdbscan", "onnxruntime", "insightface", "cv2")) {
+        $pyArgs += "--collect-all"
+        $pyArgs += $pkg
+    }
+
     if (Test-Path $modelCache) {
         Write-Host "Bundling InsightFace cache from $modelCache"
         $pyArgs += "--add-data"
