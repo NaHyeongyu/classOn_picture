@@ -361,12 +361,19 @@ def api_upload() -> Response:
         target.parent.mkdir(parents=True, exist_ok=True)
         # Append chunk to target file
         try:
+            try:
+                chunk.stream.seek(0)
+            except Exception:
+                pass
+            data_bytes = chunk.stream.read()
+            if not data_bytes:
+                data_bytes = chunk.read()
             with open(target, "ab") as w:
-                chunk.save(w)
+                w.write(data_bytes)
         except Exception:
-            data = chunk.stream.read()
+            data_bytes = chunk.read()
             with open(target, "ab") as w:
-                w.write(data)
+                w.write(data_bytes)
         saved = 1
         received_info = {"file_name": Path(file_name).name, "chunk_index": idx, "chunk_total": total}
     else:
