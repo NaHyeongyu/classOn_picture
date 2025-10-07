@@ -14,8 +14,17 @@ from threading import Thread
 
 from flask import Flask, Response, flash, redirect, render_template_string, request, send_from_directory, url_for, jsonify, send_file
 
-# Ensure src is importable
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+# Resolve project paths so src package remains importable in PyInstaller bundles
+IS_FROZEN = getattr(sys, "frozen", False)
+if IS_FROZEN:
+    _meipass = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    BASE_DIR = _meipass
+    sys.path.insert(0, str(BASE_DIR))
+    sys.path.insert(0, str(BASE_DIR / "src"))
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    sys.path.insert(0, str(BASE_DIR))
+    sys.path.insert(0, str(BASE_DIR / "src"))
 
 from src.pipeline import run_pipeline  # noqa: E402
 from src.utils.fs import ensure_dir  # noqa: E402
@@ -25,14 +34,13 @@ from src.utils.logging import setup_logger  # noqa: E402
 logger = setup_logger()
 
 # Paths: support PyInstaller (frozen) bundle
-BASE_DIR = Path(__file__).resolve().parent.parent
-IS_FROZEN = getattr(sys, "frozen", False)
 if IS_FROZEN:
     # Static assets are embedded via --add-data into _MEIPASS/webui/static
-    MEIPASS = Path(getattr(sys, "_MEIPASS", BASE_DIR))
+    MEIPASS = BASE_DIR
     STATIC_DIR = MEIPASS / "webui" / "static"
     DATA_ROOT = Path.cwd() / "data"  # keep writable next to the executable
 else:
+    MEIPASS = BASE_DIR
     STATIC_DIR = BASE_DIR / "scripts" / "webui" / "static"
     DATA_ROOT = BASE_DIR / "data"
 

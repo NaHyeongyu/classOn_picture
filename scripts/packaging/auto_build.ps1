@@ -79,6 +79,8 @@ try {
     Write-Host "Prefetching InsightFace models to ensure they are bundled"
     $prefetch = @'
 import numpy as np
+from pathlib import Path
+
 try:
     from insightface.app import FaceAnalysis
 except ImportError as exc:
@@ -91,6 +93,10 @@ try:
     app.get(dummy)
 except Exception:
     pass
+
+cache = Path(Path.home(), '.insightface')
+if not cache.exists():
+    raise SystemExit(f"InsightFace cache not found at {cache}. Run the pipeline once before packaging.")
 '@
     $tmpPrefetch = [System.IO.Path]::GetTempFileName()
     Set-Content -Path $tmpPrefetch -Value $prefetch -Encoding utf8
