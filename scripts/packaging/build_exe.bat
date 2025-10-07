@@ -13,9 +13,11 @@ pip install -r requirements.txt pyinstaller
 python -c "import numpy as np; from insightface.app import FaceAnalysis; app=FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640)); app.get(np.zeros((640,640,3), dtype='uint8'))"
 
 set "STATIC_DIR=%CD%\scripts\webui\static"
+set "SRC_DIR=%CD%\src"
 set "MODEL_CACHE=%USERPROFILE%\.insightface"
 set "PYINSTALLER_ARGS=--noconfirm --clean --onefile --windowed --name ClassOnFace"
 set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --add-data "%STATIC_DIR%;webui/static""
+set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --add-data "%SRC_DIR%;src""
 set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --collect-all src"
 
 if exist "%MODEL_CACHE%" (

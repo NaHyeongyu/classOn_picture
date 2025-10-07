@@ -110,6 +110,7 @@ if not cache.exists():
 
     Write-Host "Building Windows executable via PyInstaller"
     $staticDir = Join-Path $repoRoot "scripts\webui\static"
+    $srcDir = Join-Path $repoRoot "src"
     $pyArgs = @(
         "--noconfirm",
         "--clean",
@@ -117,6 +118,7 @@ if not cache.exists():
         "--windowed",
         "--name", "ClassOnFace",
         "--add-data", "$staticDir;webui/static",
+        "--add-data", "$srcDir;src",
         "--collect-all", "src"
     )
 
