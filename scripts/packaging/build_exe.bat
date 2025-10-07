@@ -1,16 +1,13 @@
 @echo off
 setlocal
 
-REM Create venv (optional)
-if not exist .venv (
-  python -m venv .venv
-)
 call .venv\Scripts\activate
 
 python -m pip install --upgrade pip
 pip install -r requirements.txt pyinstaller
 
-REM Build one-file GUI executable
+python -c "import numpy as np; from insightface.app import FaceAnalysis; app=FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider']); app.prepare(ctx_id=0, det_size=(640,640)); app.get(np.zeros((640,640,3), dtype='uint8'))"
+
 set "STATIC_DIR=%CD%\scripts\webui\static"
 set "MODEL_CACHE=%USERPROFILE%\.insightface"
 set "PYINSTALLER_ARGS=--noconfirm --clean --onefile --windowed --name ClassOnFace"

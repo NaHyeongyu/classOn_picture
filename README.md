@@ -122,7 +122,7 @@ Set-Location <repository-root>
 동작 순서: Python 미설치 시 winget으로 자동 설치 → `.venv` 생성 → 의존성/pyinstaller 설치 → `dist\ClassOnFace.exe` 빌드. winget이 없거나 설치 권한이 없다면 Python을 수동 설치한 뒤 다시 실행하면 나머지 단계가 그대로 이어집니다.
 
 참고
-- PyInstaller one-file 모드로 패키징됩니다. InsightFace/ONNX는 제외한 라이트 요구사항(`scripts/packaging/requirements-lite.txt`)으로 빌드하여 용량/의존성을 줄였습니다. 정확도가 더 필요하면 `requirements.txt`로 빌드해도 됩니다.
+- PyInstaller one-file 모드로 패키징되며, `requirements.txt` 전체 의존성과 InsightFace 모델 캐시까지 포함해 바로 사용할 수 있습니다.
 - 방화벽 경고가 뜨면 로컬 네트워크 허용을 선택하세요.
 - 실행 중 파일은 현재 작업 폴더(`data/`)에 저장됩니다. 용량 관리를 위해 UI의 “이전 사진 삭제” 기능을 사용하세요.
 

@@ -1,7 +1,6 @@
 param(
     [string]$PythonWingetId = "Python.Python.3.11",
-    [switch]$ForceWinget,
-    [switch]$Lite
+    [switch]$ForceWinget
 )
 
 $ErrorActionPreference = "Stop"
@@ -52,7 +51,6 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 $repoRoot = Resolve-Path (Join-Path $scriptDir "..\..")
 $venvDir = Join-Path $repoRoot ".venv"
 $venvPython = Join-Path $venvDir "Scripts\python.exe"
-$requirementsLite = Join-Path $scriptDir "requirements-lite.txt"
 $requirementsFull = Join-Path $repoRoot "requirements.txt"
 $distExe = Join-Path $repoRoot "dist\ClassOnFace.exe"
 $modelCache = Join-Path $env:USERPROFILE ".insightface"
@@ -75,13 +73,29 @@ try {
     Write-Host "Upgrading pip inside virtual environment"
     & $venvPython -m pip install --upgrade pip
 
-    $requirementsToUse = $requirementsFull
-    if ($Lite.IsPresent) {
-        $requirementsToUse = $requirementsLite
-    }
+    Write-Host "Installing packaging requirements from $(Split-Path $requirementsFull -Leaf)"
+    & $venvPython -m pip install -r $requirementsFull pyinstaller
 
-    Write-Host "Installing packaging requirements from $(Split-Path $requirementsToUse -Leaf)"
-    & $venvPython -m pip install -r $requirementsToUse pyinstaller
+    Write-Host "Prefetching InsightFace models to ensure they are bundled"
+    $prefetch = @'
+import numpy as np
+try:
+    from insightface.app import FaceAnalysis
+except ImportError as exc:
+    raise SystemExit(f"InsightFace import failed: {exc}")
+
+app = FaceAnalysis(name="buffalo_l", providers=["CPUExecutionProvider"])
+app.prepare(ctx_id=0, det_size=(640, 640))
+dummy = np.zeros((640, 640, 3), dtype=np.uint8)
+try:
+    app.get(dummy)
+except Exception:
+    pass
+'@
+    $tmpPrefetch = [System.IO.Path]::GetTempFileName()
+    Set-Content -Path $tmpPrefetch -Value $prefetch -Encoding utf8
+    & $venvPython $tmpPrefetch
+    Remove-Item $tmpPrefetch -Force
 
     $pyinstallerExe = Join-Path $venvDir "Scripts\pyinstaller.exe"
     if (-not (Test-Path $pyinstallerExe)) {
