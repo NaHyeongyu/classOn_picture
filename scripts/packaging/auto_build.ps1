@@ -110,7 +110,8 @@ except Exception:
         "--onefile",
         "--windowed",
         "--name", "ClassOnFace",
-        "--add-data", "$staticDir;webui/static"
+        "--add-data", "$staticDir;webui/static",
+        "--collect-all", "src"
     )
 
     if (Test-Path $modelCache) {

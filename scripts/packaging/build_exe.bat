@@ -12,6 +12,7 @@ set "STATIC_DIR=%CD%\scripts\webui\static"
 set "MODEL_CACHE=%USERPROFILE%\.insightface"
 set "PYINSTALLER_ARGS=--noconfirm --clean --onefile --windowed --name ClassOnFace"
 set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --add-data "%STATIC_DIR%;webui/static""
+set "PYINSTALLER_ARGS=%PYINSTALLER_ARGS% --collect-all src"
 
 if exist "%MODEL_CACHE%" (
   echo Bundling InsightFace cache from "%MODEL_CACHE%"
