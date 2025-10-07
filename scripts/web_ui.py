@@ -17,12 +17,13 @@ from flask import Flask, Response, flash, redirect, render_template_string, requ
 # Resolve project paths so src package remains importable in PyInstaller bundles
 IS_FROZEN = getattr(sys, "frozen", False)
 if IS_FROZEN:
-    _meipass = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-    BASE_DIR = _meipass
+    APP_ROOT = Path(sys.executable).resolve().parent
+    BASE_DIR = Path(getattr(sys, "_MEIPASS", APP_ROOT))
     sys.path.insert(0, str(BASE_DIR))
     sys.path.insert(0, str(BASE_DIR / "src"))
 else:
-    BASE_DIR = Path(__file__).resolve().parent.parent
+    APP_ROOT = Path(__file__).resolve().parent.parent
+    BASE_DIR = APP_ROOT
     sys.path.insert(0, str(BASE_DIR))
     sys.path.insert(0, str(BASE_DIR / "src"))
 
@@ -38,14 +39,13 @@ if IS_FROZEN:
     # Static assets are embedded via --add-data into _MEIPASS/webui/static
     MEIPASS = BASE_DIR
     STATIC_DIR = MEIPASS / "webui" / "static"
-    DATA_ROOT = Path.cwd() / "data"  # keep writable next to the executable
 else:
     MEIPASS = BASE_DIR
     STATIC_DIR = BASE_DIR / "scripts" / "webui" / "static"
-    DATA_ROOT = BASE_DIR / "data"
 
-DATA_IN = DATA_ROOT / "input"
-DATA_OUT = DATA_ROOT / "output"
+DATA_ROOT = ensure_dir(APP_ROOT / "data")
+DATA_IN = ensure_dir(DATA_ROOT / "input")
+DATA_OUT = ensure_dir(DATA_ROOT / "output")
 
 # Serve SPA static files at root path
 APP = Flask(__name__, static_folder=str(STATIC_DIR), static_url_path="/")
